@@ -1,0 +1,7 @@
+aws_region             = "us-east-1"
+project_name           = "pr-agent-flow"
+github_webhook_secret  = "REPLACE_ME" # openssl rand -hex 32
+
+tags = {
+  project = "pr-agent-flow"
+}

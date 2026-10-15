@@ -1,0 +1,3 @@
+this project implements a Pull Request listener. It reads messages from an SQS queue. When it finds a github PR message related to new comment or new review in a pull request it launches a claude code sandbox using docker sandboxes via `sbx run claude --branch BRANCH_NAME`. The branch name is the same as the PR branch. For now let's only support a single agent per PR. The agent is started via libtmux by keeping track of the session by using the branch name. Each comment uses a subagent by instructor the orchestrator agent to use one. When all comments are addressed it pushes the commits to the branch. The session is kept alive as long as the PR remains open.
+
+See [`docs/architecture.md`](docs/architecture.md) for the full design, repo layout, and runbook.
