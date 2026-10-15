@@ -7,3 +7,10 @@ provider "aws" {
     tags = var.tags
   }
 }
+
+# Token is read from the GITHUB_TOKEN env var so it never lands in tfvars.
+# Needs admin rights on each repo in var.github_repositories (fine-grained
+# PAT: "Webhooks: read and write").
+provider "github" {
+  owner = var.github_owner
+}

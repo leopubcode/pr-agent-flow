@@ -2,6 +2,10 @@ aws_region             = "us-east-1"
 project_name           = "pr-agent-flow"
 github_webhook_secret  = "REPLACE_ME" # openssl rand -hex 32
 
+# GitHub token comes from the GITHUB_TOKEN env var, not this file.
+github_owner        = "your-org-or-user"
+github_repositories = ["your-repo"]
+
 tags = {
   project = "pr-agent-flow"
 }

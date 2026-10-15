@@ -16,6 +16,16 @@ variable "github_webhook_secret" {
   sensitive   = true
 }
 
+variable "github_owner" {
+  description = "GitHub user or organization that owns the repositories"
+  type        = string
+}
+
+variable "github_repositories" {
+  description = "Repository names (without owner) to install the PR webhook on"
+  type        = set(string)
+}
+
 variable "dlq_max_receive_count" {
   description = "Number of delivery attempts before a message is moved to the DLQ"
   type        = number

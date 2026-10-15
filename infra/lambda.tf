@@ -20,7 +20,7 @@ resource "aws_lambda_function" "webhook" {
   environment {
     variables = {
       GITHUB_WEBHOOK_SECRET = var.github_webhook_secret
-      SQS_QUEUE_URL          = aws_sqs_queue.main.url
+      SQS_QUEUE_URL         = aws_sqs_queue.main.url
     }
   }
 }

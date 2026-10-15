@@ -8,11 +8,11 @@ resource "aws_sqs_queue" "dlq" {
 
 resource "aws_sqs_queue" "main" {
   name                       = "${var.project_name}-events"
-  visibility_timeout_seconds = 300 # headroom for first-time sandbox provisioning
+  visibility_timeout_seconds = 300    # headroom for first-time sandbox provisioning
   message_retention_seconds  = 345600 # 4 days
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
-    maxReceiveCount      = var.dlq_max_receive_count
+    maxReceiveCount     = var.dlq_max_receive_count
   })
 }

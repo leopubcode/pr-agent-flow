@@ -28,8 +28,9 @@ Only one live agent session per PR, keyed by branch name.
 
 ## Components
 
-- **`infra/`** — Terraform for the SQS queue + DLQ, the webhook Lambda, API Gateway, and
-  IAM (a role for the Lambda, a scoped-down IAM user for the consumer).
+- **`infra/`** — Terraform for the SQS queue + DLQ, the webhook Lambda, API Gateway, IAM
+  (a role for the Lambda, a scoped-down IAM user for the consumer), and the GitHub repo
+  webhooks themselves (`github.tf`, one per repo in `github_repositories`).
 - **`webhook/handler.py`** — Lambda handler. Verifies `X-Hub-Signature-256`, filters for
   the event/action combinations we care about, normalizes them into a small JSON schema,
   and forwards to SQS. Stdlib + boto3 only, so Terraform can zip it with no build step.
@@ -75,13 +76,15 @@ revisit later with e.g. `git ls-remote` polling if needed.
 ## Runbook
 
 1. `openssl rand -hex 32` for a webhook secret; copy `infra/terraform.tfvars.example` to
-   `infra/terraform.tfvars` and fill it in (gitignored).
-2. `cd infra && terraform init && terraform apply` — note the `webhook_endpoint`,
-   `sqs_queue_url`, and `consumer_access_key_id`/`consumer_secret_access_key` outputs
-   (`terraform output -json` to see sensitive ones).
-3. On the target GitHub repo: Settings -> Webhooks -> Add webhook. Payload URL =
-   `webhook_endpoint`, content type `application/json`, same secret, subscribe to: Issue
-   comments, Pull request reviews, Pull request review comments, Pull requests.
+   `infra/terraform.tfvars` and fill it in (gitignored), including `github_owner` and
+   `github_repositories`.
+2. `export GITHUB_TOKEN=...` — a PAT with admin rights on those repos (fine-grained:
+   "Webhooks: read and write"). Terraform's GitHub provider reads it from the env.
+3. `cd infra && terraform init && terraform apply` — this creates the AWS resources *and*
+   installs the webhook (`infra/github.tf`) on each listed repo, pointed at the API Gateway
+   endpoint with the shared secret. Note the `sqs_queue_url` and
+   `consumer_access_key_id`/`consumer_secret_access_key` outputs (`terraform output -json`
+   to see sensitive ones).
 4. Copy `.env.example` to `consumer/.env` and fill in `GITHUB_TOKEN` (a PAT), the AWS
    creds + `SQS_QUEUE_URL` from step 2, and `WORKSPACE_ROOT`.
 5. `pip install -e consumer/` then `pr-agent-consumer` (or `python -m consumer.main`) on
