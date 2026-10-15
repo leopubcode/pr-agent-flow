@@ -12,6 +12,10 @@ from .workspace import Workspace
 logger = logging.getLogger(__name__)
 
 
+class SandboxExitedError(RuntimeError):
+    pass
+
+
 class Dispatcher:
     def __init__(
         self,
@@ -92,12 +96,17 @@ class Dispatcher:
             status="provisioning",
         )
 
-        command = sandbox.run_command(branch)
+        command = sandbox.run_command()
         self._tmux.ensure_session(session_name, str(workspace_path), command)
 
         if not self._tmux.wait_until_ready(session_name, self._session_ready_timeout_seconds):
-            logger.warning("Session '%s' did not stabilize within timeout; proceeding anyway", session_name)
             self._state.set_status(branch, ERROR)
+            if not self._tmux.has_session(session_name):
+                output = self._tmux.last_output(session_name) or "(no output captured)"
+                raise SandboxExitedError(
+                    f"'{command}' exited during startup for '{session_name}'; last output:\n{output}"
+                )
+            logger.warning("Session '%s' did not stabilize within timeout; proceeding anyway", session_name)
         else:
             self._state.set_status(branch, ACTIVE)
 

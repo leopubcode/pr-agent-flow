@@ -6,13 +6,16 @@ import subprocess
 logger = logging.getLogger(__name__)
 
 
-def run_command(branch: str) -> str:
+def run_command() -> str:
     """The foreground command to launch inside the tmux pane.
 
-    Left as a long-lived interactive REPL (no `-p`, no inline prompt) --
-    the orchestrator needs to stay alive to receive follow-up comments.
+    Run from the branch's worktree in direct mode: the sandbox works on the
+    worktree in place, so commits land on the host as they're made. (Clone
+    mode is not an option: `sbx` refuses `--clone` inside a git worktree.)
+    Left as a long-lived interactive REPL (no `-p`) so it can receive
+    follow-up comments.
     """
-    return f"sbx run claude --branch {branch}"
+    return "sbx run claude"
 
 
 def stop(sandbox_name: str | None) -> None:

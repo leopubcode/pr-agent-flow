@@ -20,9 +20,8 @@ def _reconcile_on_startup(state: StateStore, tmux: TmuxManager) -> None:
 
     It will be re-provisioned the next time an event arrives for that branch.
     """
-    live = tmux.live_session_names()
     for row in state.all_active():
-        if row.session_name not in live:
+        if not tmux.has_session(row.session_name):
             logger.warning("Session '%s' not found in tmux on startup, marking lost", row.session_name)
             state.set_status(row.branch, LOST)
 

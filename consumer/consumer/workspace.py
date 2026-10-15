@@ -10,9 +10,9 @@ logger = logging.getLogger(__name__)
 class Workspace:
     """Manages one local clone per repo, with a git worktree per branch.
 
-    `sbx run claude --branch BRANCH_NAME` mounts the invoking shell's cwd,
-    so the consumer must have a real checkout of the branch on disk before
-    launching the sandbox.
+    `sbx run claude` works directly on the invoking shell's cwd, so each PR
+    gets its own worktree checked out on its branch before the sandbox is
+    launched.
     """
 
     def __init__(self, root: Path):
@@ -39,15 +39,17 @@ class Workspace:
         worktree_dir = self._worktree_dir(repo_full_name, branch)
         if not worktree_dir.exists():
             worktree_dir.parent.mkdir(parents=True, exist_ok=True)
+            # A real local branch (not a detached commit), so the agent
+            # commits onto the PR branch.
             subprocess.run(
-                ["git", "-C", str(repo_dir), "worktree", "add", str(worktree_dir), f"origin/{branch}"],
+                [
+                    "git", "-C", str(repo_dir), "worktree", "add", "--track",
+                    "-B", branch, str(worktree_dir), f"origin/{branch}",
+                ],
                 check=True,
             )
-        else:
-            subprocess.run(["git", "-C", str(worktree_dir), "fetch", "origin"], check=True)
-            subprocess.run(
-                ["git", "-C", str(worktree_dir), "reset", "--hard", f"origin/{branch}"], check=True
-            )
+        # An existing worktree is left as-is: it may hold the agent's
+        # unpushed work from a previous session.
 
         return worktree_dir
 

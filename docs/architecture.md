@@ -20,7 +20,7 @@ GitHub PR comment/review
                      |                                                                                   |
                      v                                                                                   v
   ensure git worktree checkout -> ensure tmux session running                            kill tmux session,
-  `sbx run claude --branch BRANCH_NAME` -> paste comment context                         stop sandbox,
+  `sbx run claude` -> paste comment context                                              stop sandbox,
   into the pane as a follow-up instruction                                               remove worktree
 ```
 
@@ -35,13 +35,14 @@ Only one live agent session per PR, keyed by branch name.
   the event/action combinations we care about, normalizes them into a small JSON schema,
   and forwards to SQS. Stdlib + boto3 only, so Terraform can zip it with no build step.
 - **`consumer/`** — the long-running Python service. Long-polls SQS and, per PR branch:
-  - `workspace.py` maintains a local clone + one git worktree per branch (`sbx run` mounts
-    the invoking shell's cwd, so a real checkout must exist on disk first).
-  - `tmux_manager.py` owns the one tmux session per branch — the evolved, bug-fixed version
-    of the original prototype `libtmux.py` (which shadowed the `libtmux` pip package by
-    sharing its name). Launches `sbx run claude --branch BRANCH_NAME` as a long-lived
-    interactive REPL (not the prototype's one-shot `-p` mode) and delivers follow-up
-    comments via `tmux load-buffer`/`paste-buffer`.
+  - `workspace.py` maintains a local clone + one git worktree per branch, checked out on
+    the PR branch. `sbx run claude` runs in direct mode on that worktree, so the agent's
+    commits land on the host as they're made. (`sbx` refuses `--clone` inside a worktree.)
+  - `tmux_manager.py` owns the one tmux session per branch. `sbx run claude` is the
+    pane's own process (no shell underneath), kept as a long-lived interactive REPL, and
+    follow-up comments are delivered via `tmux load-buffer`/`paste-buffer`. If the sandbox
+    exits, the dead pane is kept for inspection, nothing is pasted into it, and the next
+    event logs its last output and starts a fresh session.
   - `state_store.py` is a local sqlite db (`~/.pr-agent-flow/state.db` by default) tracking
     branch -> session/workspace/sandbox state, and a dedup table keyed on GitHub's
     `X-GitHub-Delivery` id (protects against SQS/GitHub redelivery).
@@ -56,7 +57,8 @@ Only one live agent session per PR, keyed by branch name.
 Code's job stops at "get new comment context in front of the already-running orchestrator
 session." Everything else is instructed via prompt (`consumer/consumer/prompts.py`):
 - Use the Task tool to spawn a subagent per incoming comment.
-- Commit and `git push` once currently outstanding comments are addressed.
+- Commit and `git push origin HEAD:<branch>` once currently outstanding comments are
+  addressed (explicit refspec, so the push target never depends on upstream config).
 - Never merge or close the PR itself.
 
 v1 has no closed-loop confirmation that a push actually happened — accepted tradeoff,

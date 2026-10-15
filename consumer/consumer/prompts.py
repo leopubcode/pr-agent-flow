@@ -10,8 +10,8 @@ describing a new PR comment or review that needs addressing.
 For each incoming comment:
 - Use the Task tool to launch a subagent dedicated to that one comment.
 - Once the currently outstanding comments are addressed, commit your changes and \
-run `git push` to push them to `{branch}`. Git credentials are already configured \
-in this sandbox -- do not attempt `gh auth login` or look for a token.
+push them with `git push origin HEAD:{branch}`. Git credentials are already \
+configured in this sandbox -- do not attempt `gh auth login` or look for a token.
 - Never merge or close this pull request yourself.
 
 Wait for the first comment below.

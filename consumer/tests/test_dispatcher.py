@@ -3,9 +3,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from consumer.dispatcher import Dispatcher
+from consumer.dispatcher import Dispatcher, SandboxExitedError
 from consumer.github_client import PullRequestInfo
-from consumer.state_store import ACTIVE, CLOSED, StateStore
+from consumer.state_store import ACTIVE, CLOSED, ERROR, StateStore
 
 
 @pytest.fixture
@@ -110,3 +110,17 @@ def test_pull_request_closed_tears_down(dispatcher, state: StateStore):
     assert row.status == CLOSED
     tmux.kill_session.assert_called_once_with("feature/x")
     workspace.cleanup.assert_called_once_with("org/repo", "feature/x")
+
+
+def test_sandbox_exit_during_startup_raises_with_output(dispatcher, state: StateStore):
+    d, tmux, github, workspace = dispatcher
+    tmux.wait_until_ready.return_value = False
+    tmux.has_session.return_value = False
+    tmux.last_output.return_value = "zsh: command not found: sbx"
+
+    with pytest.raises(SandboxExitedError, match="command not found: sbx"):
+        d.handle_message(make_comment())
+
+    tmux.send_instruction.assert_not_called()
+    assert state.get("feature/x").status == ERROR
+    assert not state.is_duplicate("d1")
