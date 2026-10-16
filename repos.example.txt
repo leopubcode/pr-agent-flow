@@ -1,0 +1,18 @@
+# Repo config file: one line per watched repository, whitespace-separated.
+# Copy to repos.txt (gitignored; it holds tokens) and keep it readable only by you:
+#
+#   cp repos.example.txt repos.txt && chmod 600 repos.txt
+#
+# Fields:
+#   owner/repo        the repository, as GitHub names it
+#   local clone path  where `sbx-start <branch>` runs (`~` is expanded)
+#   token             a fine-grained PAT scoped to this repository only
+#                     (contents read/write, pull requests read)
+#
+# A repository with a missing field gets no Coordinator and a `missing repo config`
+# line in the debug log. The file is re-read on every lookup, so edits apply without
+# restarting the consumer. See docs/architecture.md and ADR 0002.
+
+# owner/repo               local clone path               fine-grained token
+leopubcode/pr-agent-flow   ~/dev/pr-agent-flow            github_pat_REPLACE_ME
+leopubcode/another-repo    ~/dev/another-repo             github_pat_REPLACE_ME

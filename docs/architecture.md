@@ -201,8 +201,9 @@ The consumer runs on the Operator's machine, which needs:
    the sensitive ones).
 4. Copy `.env.example` to `consumer/.env` and fill in the AWS credentials, `SQS_QUEUE_URL` and
    `ALLOWED_COMMENT_AUTHORS` (the Reviewers).
-5. Create the repo config file (`repos.txt` in the project checkout) with one line per repo in
-   `github_repositories`: `owner/repo`, its local clone path, and its fine-grained token.
+5. Copy `repos.example.txt` to `repos.txt` in the project checkout (`chmod 600` it) and list
+   one line per repo in `github_repositories`: `owner/repo`, its local clone path, and its
+   fine-grained token.
 6. `pip install -e consumer/` then `pr-agent-consumer` (or `python -m consumer.main`).
 
 ### Operating
