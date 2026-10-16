@@ -1,0 +1,3 @@
+# Each sandbox gets its own repository's token
+
+When the consumer starts a Coordinator, it runs `sbx secret set github --sandbox <name>` with a fine-grained personal access token scoped to that pull request's repository only, looked up in an Operator-maintained, gitignored file that lists each `owner/repo` with its local clone path (where `sbx-start` runs) and its token. We chose this over a single global `sbx secret set github` so that a Coordinator can only read and push to its own repository, even though the system watches several. A repository with no token or no clone path gets no Coordinator, and that is written to the debug log.
