@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from consumer.agent_file import AgentFile
-from consumer.agent_runtime import AgentRuntimeError
+from consumer.agent_runtime import AgentRuntimeError, PromptTimeout
 from consumer.debug_log import DebugLog
 from consumer.dispatcher import Dispatcher
 from consumer.github_client import PullRequestInfo
@@ -317,3 +317,49 @@ def test_message_that_raises_is_not_recorded_and_is_handled_again_on_redelivery(
     env.runtime.starting_statuses = ()
     env.dispatcher.handle_message(make_comment(delivery_id="d1"))
     assert env.processed_ids() == ["d1"]
+
+
+def test_prompt_timeout_on_existing_coordinator_is_logged_and_raised_without_starting_another(env):
+    env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+    env.runtime.timing_out_panes.add("pane-1")
+
+    with pytest.raises(PromptTimeout):
+        env.dispatcher.handle_message(make_comment(delivery_id="d2", body="second"))
+
+    assert len(env.runtime.started()) == 1
+    assert env.processed_ids() == ["d1"]
+    [line] = env.debug_lines()
+    _, pr_key, pane_id, kind, _ = line.split("\t")
+    assert (pr_key, pane_id, kind) == ("org/repo:feature/x", "pane-1", "prompt timed out")
+
+
+def test_startup_prompt_timeout_is_logged_and_redelivery_reuses_the_same_coordinator(env):
+    env.runtime.timing_out_panes.add("pane-1")
+
+    with pytest.raises(PromptTimeout):
+        env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+
+    assert env.processed_ids() == []
+    [line] = env.debug_lines()
+    assert line.split("\t")[2:4] == ["pane-1", "prompt timed out"]
+
+    env.runtime.timing_out_panes.clear()
+    env.dispatcher.handle_message(make_comment(delivery_id="d1", body="redelivered"))
+
+    assert len(env.runtime.started()) == 1
+    assert "redelivered" in env.runtime.prompts["pane-1"][-1]
+    assert env.processed_ids() == ["d1"]
+
+
+def test_new_coordinator_that_never_becomes_idle_is_logged_and_raised(tmp_path):
+    env = Env(tmp_path, ready_timeout_seconds=0)
+    env.runtime.starting_statuses = ("starting",)
+
+    with pytest.raises(AgentRuntimeError):
+        env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+
+    assert env.runtime.prompts["pane-1"] == []
+    assert env.processed_ids() == []
+    [line] = env.debug_lines()
+    _, pr_key, pane_id, kind, _ = line.split("\t")
+    assert (pr_key, pane_id, kind) == ("org/repo:feature/x", "pane-1", "never became idle")

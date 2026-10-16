@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from consumer.agent_runtime import GONE, IDLE, AgentInfo, StartedCoordinator
+from consumer.agent_runtime import GONE, IDLE, AgentInfo, PromptTimeout, StartedCoordinator
 
 
 class FakeAgentRuntime:
@@ -20,6 +20,7 @@ class FakeAgentRuntime:
         self.tabs: dict[str, str] = {}  # pane_id -> tab_id
         self.secrets: dict[str, str] = {}  # sandbox_name -> token
         self.prompts: dict[str, list[str]] = {}
+        self.timing_out_panes: set[str] = set()  # prompts to these raise PromptTimeout
         self._started = 0
 
     def start_coordinator(self, branch: str, clone_dir: Path) -> StartedCoordinator:
@@ -47,6 +48,8 @@ class FakeAgentRuntime:
 
     def prompt(self, pane_id: str, text: str) -> None:
         self.calls.append(("prompt", pane_id, text))
+        if pane_id in self.timing_out_panes:
+            raise PromptTimeout(f"prompt to {pane_id} timed out")
         self.prompts.setdefault(pane_id, []).append(text)
 
     def stop_sandbox(self, sandbox_name: str) -> None:

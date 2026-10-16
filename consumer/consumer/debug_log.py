@@ -10,6 +10,8 @@ from pathlib import Path
 MISSING_REPO_CONFIG = "missing repo config"
 PANE_MISSING = "pane missing"
 SANDBOX_ORPHANED = "sandbox orphaned"
+PROMPT_TIMED_OUT = "prompt timed out"
+NEVER_BECAME_IDLE = "never became idle"
 
 
 class DebugLog:
