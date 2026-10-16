@@ -121,10 +121,10 @@ def make_comment(delivery_id="d1", branch="feature/x", repo="org/repo", body="pl
 def test_first_feedback_starts_a_coordinator_then_delivers_startup_prompt_and_feedback(env):
     env.dispatcher.handle_message(make_comment(body="rename this variable"))
 
-    assert env.runtime.started() == [("start_coordinator", "feature/x", env.clone)]
+    assert env.runtime.started() == [("start_coordinator", env.clone)]
     assert env.runtime.secrets == {"sbx-1": "tok-repo"}
     assert env.runtime.call_names() == ["start_coordinator", "set_secret", "prompt", "prompt"]
-    assert env.agent_lines() == [["org/repo:feature/x", "pane-1", "feature/x sbx-1", "sbx-1"]]
+    assert env.agent_lines() == [["org/repo:feature/x", "pane-1", "tab sbx-1", "sbx-1"]]
 
     startup, feedback = env.runtime.prompts["pane-1"]
     assert "org/repo" in startup and "#1" in startup
@@ -164,7 +164,7 @@ def test_feedback_for_a_coordinator_whose_pane_is_gone_starts_a_new_one(env):
     startup, feedback = env.runtime.prompts["pane-2"]
     assert "HEAD:feature/x" in startup
     assert "second" in feedback
-    assert env.agent_lines() == [["org/repo:feature/x", "pane-2", "feature/x sbx-2", "sbx-2"]]
+    assert env.agent_lines() == [["org/repo:feature/x", "pane-2", "tab sbx-2", "sbx-2"]]
 
 
 def test_replacing_a_gone_pane_logs_it_and_leaves_the_old_sandbox_running_as_orphaned(env):
@@ -191,7 +191,7 @@ def test_coordinator_whose_pane_exists_is_never_replaced_whatever_its_status(env
 
     assert len(env.runtime.started()) == 1
     assert "second" in env.runtime.prompts["pane-1"][-1]
-    assert env.agent_lines() == [["org/repo:feature/x", "pane-1", "feature/x sbx-1", "sbx-1"]]
+    assert env.agent_lines() == [["org/repo:feature/x", "pane-1", "tab sbx-1", "sbx-1"]]
     assert env.debug_lines() == []
 
 
@@ -200,8 +200,8 @@ def test_same_branch_in_two_repositories_gets_separate_coordinators(env):
     env.dispatcher.handle_message(make_comment(delivery_id="d2", repo="org/other"))
 
     assert env.runtime.started() == [
-        ("start_coordinator", "feature/x", env.clone),
-        ("start_coordinator", "feature/x", env.other_clone),
+        ("start_coordinator", env.clone),
+        ("start_coordinator", env.other_clone),
     ]
     assert env.runtime.secrets == {"sbx-1": "tok-repo", "sbx-2": "tok-other"}
     assert [line[:2] for line in env.agent_lines()] == [
@@ -232,7 +232,7 @@ def test_pr_comment_branch_is_resolved_with_the_repos_own_token(env):
     )
 
     assert env.github.lookups == [("org/other", 1, "tok-other")]
-    assert env.runtime.started() == [("start_coordinator", "fix/y", env.other_clone)]
+    assert env.runtime.started() == [("start_coordinator", env.other_clone)]
     assert env.agent_lines()[0][0] == "org/other:fix/y"
 
 
@@ -516,5 +516,5 @@ def test_feedback_after_close_starts_a_fresh_coordinator(env):
     env.dispatcher.handle_message(make_comment(delivery_id="d2", body="after reopen"))
 
     assert len(env.runtime.started()) == 2
-    assert env.agent_lines() == [["org/repo:feature/x", "pane-2", "feature/x sbx-2", "sbx-2"]]
+    assert env.agent_lines() == [["org/repo:feature/x", "pane-2", "tab sbx-2", "sbx-2"]]
     assert "after reopen" in env.runtime.prompts["pane-2"][-1]

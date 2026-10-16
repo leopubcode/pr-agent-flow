@@ -32,16 +32,16 @@ class FakeAgentRuntime:
         self.failing: set[str] = set()  # method names that raise AgentRuntimeError
         self._started = 0
 
-    def start_coordinator(self, branch: str, clone_dir: Path) -> StartedCoordinator:
+    def start_coordinator(self, clone_dir: Path) -> StartedCoordinator:
         self._started += 1
         n = self._started
-        self.calls.append(("start_coordinator", branch, Path(clone_dir)))
+        self.calls.append(("start_coordinator", Path(clone_dir)))
         pane_id = f"pane-{n}"
         sandbox_name = f"sbx-{n}"
         self.panes[pane_id] = list(self.starting_statuses)
         self.tabs[pane_id] = f"tab-{n}"
         self.prompts[pane_id] = []
-        return StartedCoordinator(pane_id=pane_id, tab_label=f"{branch} {sandbox_name}", sandbox_name=sandbox_name)
+        return StartedCoordinator(pane_id=pane_id, tab_label=f"tab {sandbox_name}", sandbox_name=sandbox_name)
 
     def set_secret(self, sandbox_name: str, token: str) -> None:
         self.calls.append(("set_secret", sandbox_name, token))

@@ -133,7 +133,7 @@ class Dispatcher:
 
         pr_key = make_pr_key(repo_full_name, branch)
         if is_fork:
-            # sbx-start <branch> and pushing to origin can't reach a fork's branch.
+            # Fetching and pushing through origin can't reach a fork's branch.
             self._debug_log.write(FORK_PR_IGNORED, pr_key, f"{repo_full_name}#{pr_number} comes from a fork; no Coordinator used")
             return
 
@@ -180,7 +180,7 @@ class Dispatcher:
         )
 
     def _start_coordinator(self, pr_key: str, repo: RepoEntry, pr_number: int, branch: str) -> AgentRecord:
-        started = self._runtime.start_coordinator(branch, repo.clone_path)
+        started = self._runtime.start_coordinator(repo.clone_path)
         try:
             self._runtime.set_secret(started.sandbox_name, repo.token)
             self._wait_until_idle(pr_key, started.pane_id)
