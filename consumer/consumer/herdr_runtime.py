@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import subprocess
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -36,10 +37,14 @@ class HerdrSbxRuntime:
         sbx_start_command: Sequence[str] | None = None,
         prompt_timeout_seconds: float = 30,
         command_timeout_seconds: float = 120,
+        sandbox_listed_timeout_seconds: float = 30,
+        sandbox_listed_poll_interval_seconds: float = 2,
     ):
         self._sbx_start_command = list(sbx_start_command or default_sbx_start_command())
         self._prompt_timeout_seconds = prompt_timeout_seconds
         self._command_timeout_seconds = command_timeout_seconds
+        self._sandbox_listed_timeout_seconds = sandbox_listed_timeout_seconds
+        self._sandbox_listed_poll_interval_seconds = sandbox_listed_poll_interval_seconds
 
     def start_coordinator(self, clone_dir: Path) -> StartedCoordinator:
         out = self._run(self._sbx_start_command, cwd=clone_dir).stdout
@@ -78,15 +83,26 @@ class HerdrSbxRuntime:
         self._run(["herdr", "tab", "close", tab_id])
 
     def _sandbox_named(self, tab_label: str) -> str:
-        """The sandbox whose name matches the tab label's last word."""
-        wanted = tab_label.split()[-1]
-        listing = json.loads(self._run(["sbx", "list", "--json"]).stdout or "[]")
-        if isinstance(listing, dict):
-            listing = next((v for v in listing.values() if isinstance(v, list)), [])
-        names = [item.get("name") if isinstance(item, dict) else item for item in listing]
-        if wanted in names:
-            return wanted
-        raise AgentRuntimeError(f"no sandbox named {wanted!r} in `sbx list --json` (have {names})")
+        """The one sandbox whose name contains the tab label's last word.
+
+        The label ends in a fragment of the name (`sbx claude-code 5d563a`). A new sandbox may not
+        be listed the moment `sbx-start` returns, so `sbx list` is re-read for a while.
+        """
+        fragment = tab_label.split()[-1]
+        deadline = time.monotonic() + self._sandbox_listed_timeout_seconds
+        while True:
+            names = _sandbox_names(self._run(["sbx", "list", "--json"]).stdout)
+            matches = [name for name in names if fragment in name]
+            if len(matches) == 1:
+                return matches[0]
+            if len(matches) > 1:
+                raise AgentRuntimeError(f"several sandboxes match {fragment!r} in `sbx list --json`: {matches}")
+            if time.monotonic() >= deadline:
+                raise AgentRuntimeError(
+                    f"no sandbox name contains {fragment!r} in `sbx list --json` after "
+                    f"{self._sandbox_listed_timeout_seconds}s (have {names})"
+                )
+            time.sleep(self._sandbox_listed_poll_interval_seconds)
 
     def _run(
         self,
@@ -133,6 +149,45 @@ def _last_json_object(text: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise AgentRuntimeError(f"expected a JSON object, got {text!r}")
     return value
+
+
+def _sandbox_names(text: str) -> list[str]:
+    """Sandbox names in `sbx list --json` output.
+
+    Accepts one JSON document or several in a row (e.g. one object per sandbox), where each is
+    a sandbox object, a list of sandboxes, or an object wrapping such a list.
+    """
+    names = []
+    for value in _json_values(text):
+        if isinstance(value, dict) and "name" in value:
+            items = [value]
+        elif isinstance(value, dict):
+            items = next((v for v in value.values() if isinstance(v, list)), [])
+        elif isinstance(value, list):
+            items = value
+        else:
+            items = []
+        names.extend(item.get("name") if isinstance(item, dict) else item for item in items)
+    return names
+
+
+def _json_values(text: str) -> list[Any]:
+    """Every JSON value in `text`, one after another, separated by whitespace only."""
+    decoder = json.JSONDecoder()
+    values, pos = [], 0
+    while (pos := _skip_whitespace(text, pos)) < len(text):
+        try:
+            value, pos = decoder.raw_decode(text, pos)
+        except ValueError as exc:
+            raise AgentRuntimeError(f"expected JSON output, got {text!r}") from exc
+        values.append(value)
+    return values
+
+
+def _skip_whitespace(text: str, pos: int) -> int:
+    while pos < len(text) and text[pos].isspace():
+        pos += 1
+    return pos
 
 
 def _redact(args: list[str], limit: int = 120) -> str:
