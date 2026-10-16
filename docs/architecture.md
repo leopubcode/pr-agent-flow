@@ -126,19 +126,29 @@ in `consumer/.env` (see `.env.example`).
 
 | File | Default | Setting | Owner |
 | --- | --- | --- | --- |
-| Repo config file | `./repos.txt` | `REPO_CONFIG_PATH` | Operator |
+| Repo config file | `./repos.json` | `REPO_CONFIG_PATH` | Operator |
 | Agent file | `./agents.tsv` | `AGENT_FILE_PATH` | consumer (Operator may edit) |
 | Debug log | `./debug.log` | `DEBUG_LOG_PATH` | consumer |
 | Processed-IDs file | `~/.pr-agent-flow/processed-ids` | `PROCESSED_IDS_PATH` | consumer |
 
 ### Repo config file
 
-The Operator lists each watched repository once, whitespace-separated:
+The Operator lists each watched repository once, as a JSON object keyed by `owner/repo` (see
+`repos.example.json`):
 
+```json
+{
+  "leopubcode/my-repo": {
+    "clone_path": "~/dev/my-repo",
+    "token": "github_pat_..."
+  }
+}
 ```
-# owner/repo          local clone path              fine-grained token
-leopubcode/my-repo    ~/dev/my-repo                 github_pat_...
-```
+
+Lookups ignore the case of `owner/repo`, and `~` in `clone_path` is expanded. A repository that is
+absent, or whose entry lacks a non-empty `clone_path` or `token`, gets no Coordinator and a
+`missing repo config` debug log line. A file that isn't a valid JSON object makes the message fail,
+so it stays in the queue and is retried once the file is fixed.
 
 The clone path is where `sbx-start` runs. The token is a fine-grained personal access token
 scoped to that repository only (contents read/write and pull requests read is enough for the
@@ -201,9 +211,9 @@ The consumer runs on the Operator's machine, which needs:
    the sensitive ones).
 4. Copy `.env.example` to `consumer/.env` and fill in the AWS credentials, `SQS_QUEUE_URL` and
    `ALLOWED_COMMENT_AUTHORS` (the Reviewers).
-5. Copy `repos.example.txt` to `repos.txt` in the project checkout (`chmod 600` it) and list
-   one line per repo in `github_repositories`: `owner/repo`, its local clone path, and its
-   fine-grained token.
+5. Copy `repos.example.json` to `repos.json` in the project checkout (`chmod 600` it) and add
+   one entry per repo in `github_repositories`, keyed by `owner/repo`, with its `clone_path` and
+   fine-grained `token`.
 6. `pip install -e consumer/` then `pr-agent-consumer` (or `python -m consumer.main`).
 
 ### Operating

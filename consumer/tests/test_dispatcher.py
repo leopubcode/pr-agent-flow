@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -44,16 +45,15 @@ class Env:
         self.tmp = tmp_path
         self.runtime = FakeAgentRuntime()
         self.github = FakeGithub()
-        self.repo_config_path = tmp_path / "repos.txt"
+        self.repo_config_path = tmp_path / "repos.json"
         self.agent_file_path = tmp_path / "agents.tsv"
         self.debug_log_path = tmp_path / "debug.log"
         self.clone = tmp_path / "clones" / "repo"
         self.other_clone = tmp_path / "clones" / "other"
-        self.repo_config_path.write_text(
-            "# owner/repo  clone path  token\n"
-            f"org/repo\t{self.clone}\ttok-repo\n"
-            f"org/other {self.other_clone} tok-other\n"
-        )
+        self.write_repo_config({
+            "org/repo": {"clone_path": str(self.clone), "token": "tok-repo"},
+            "org/other": {"clone_path": str(self.other_clone), "token": "tok-other"},
+        })
         self.processed_ids_path = tmp_path / "processed-ids"
         self.dispatcher = Dispatcher(
             runtime=self.runtime,
@@ -66,6 +66,12 @@ class Env:
             ready_poll_interval_seconds=0,
             allowed_comment_authors=frozenset({"octocat"}),
         )
+
+    def write_repo_config(self, repos: dict) -> None:
+        self.repo_config_path.write_text(json.dumps(repos))
+
+    def read_repo_config(self) -> dict:
+        return json.loads(self.repo_config_path.read_text())
 
     def agent_lines(self) -> list[list[str]]:
         if not self.agent_file_path.exists():
@@ -204,10 +210,10 @@ def test_same_branch_in_two_repositories_gets_separate_coordinators(env):
     ]
 
 
-@pytest.mark.parametrize("config_line", [None, "org/unknown\t/clones/unknown", "org/unknown"])
-def test_repository_without_clone_path_and_token_gets_no_coordinator(env, config_line):
-    if config_line:
-        env.repo_config_path.write_text(env.repo_config_path.read_text() + config_line + "\n")
+@pytest.mark.parametrize("entry", [None, {"clone_path": "/clones/unknown"}, {}])
+def test_repository_without_clone_path_and_token_gets_no_coordinator(env, entry):
+    if entry is not None:
+        env.write_repo_config({**env.read_repo_config(), "org/unknown": entry})
 
     env.dispatcher.handle_message(make_comment(repo="org/unknown"))
 

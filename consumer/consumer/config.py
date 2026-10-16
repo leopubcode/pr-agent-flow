@@ -45,7 +45,7 @@ class Config:
             aws_region=os.environ.get("AWS_REGION", "us-east-1"),
             sqs_queue_url=_required("SQS_QUEUE_URL"),
             processed_ids_path=_path("PROCESSED_IDS_PATH", Path("~/.pr-agent-flow/processed-ids")),
-            repo_config_path=_path("REPO_CONFIG_PATH", PROJECT_ROOT / "repos.txt"),
+            repo_config_path=_path("REPO_CONFIG_PATH", PROJECT_ROOT / "repos.json"),
             agent_file_path=_path("AGENT_FILE_PATH", PROJECT_ROOT / "agents.tsv"),
             debug_log_path=_path("DEBUG_LOG_PATH", PROJECT_ROOT / "debug.log"),
             sbx_start_command=shlex.split(sbx_start) if sbx_start else None,
