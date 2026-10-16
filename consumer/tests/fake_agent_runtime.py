@@ -55,6 +55,12 @@ class FakeAgentRuntime:
     def close_tab(self, tab_id: str) -> None:
         self.calls.append(("close_tab", tab_id))
 
+    # -- helpers for arranging scenarios --
+
+    def remove_pane(self, pane_id: str) -> None:
+        """Simulate a pane that was closed outside the consumer (its sandbox keeps running)."""
+        del self.panes[pane_id]
+
     # -- helpers for assertions --
 
     def call_names(self) -> list[str]:
