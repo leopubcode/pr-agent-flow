@@ -14,6 +14,11 @@ from .debug_log import (
     PANE_MISSING,
     PROMPT_TIMED_OUT,
     SANDBOX_ORPHANED,
+    TEARDOWN_FORGOTTEN,
+    TEARDOWN_SANDBOX_STOPPED,
+    TEARDOWN_STEP_FAILED,
+    TEARDOWN_TAB_CLOSED,
+    TEARDOWN_TAB_SKIPPED,
     DebugLog,
 )
 from .github_client import GithubClient
@@ -60,9 +65,9 @@ class Dispatcher:
 
         if msg["event_type"] == "pull_request":
             # The webhook Lambda only ever emits event_type "pull_request" for
-            # the closed action (see webhook/handler.py normalize()).
-            # Teardown of the Coordinator is not built yet.
-            logger.info("PR %s#%s closed; teardown not implemented", msg["repo_full_name"], msg["pr_number"])
+            # the closed action (see webhook/handler.py normalize()). Teardown
+            # runs whoever closed it, so it sits before the Reviewer check.
+            self._tear_down(msg)
         elif (msg.get("actor") or "").lower() not in self._allowed_comment_authors:
             # Covers both strangers on public repos and the Agent Account,
             # whose comments would otherwise loop back into the queue.
@@ -74,6 +79,41 @@ class Dispatcher:
             self._deliver_feedback(msg)
 
         self._processed_ids.record(delivery_id)
+
+    def _tear_down(self, msg: dict[str, Any]) -> None:
+        pr_key = f"{msg['repo_full_name']}:{msg['branch']}"
+        record = self._agent_file.get(pr_key)
+        if record is None:
+            logger.info("PR %s closed with no recorded Coordinator; nothing to tear down", pr_key)
+            return
+
+        def log(kind: str, detail: str) -> None:
+            self._debug_log.write(kind, pr_key, detail, pane_id=record.pane_id)
+
+        def stop_sandbox() -> None:
+            self._runtime.stop_sandbox(record.sandbox_name)
+            log(TEARDOWN_SANDBOX_STOPPED, f"stopped sandbox {record.sandbox_name}")
+
+        def close_tab() -> None:
+            # The tab ID is looked up now: tabs can be renumbered while the
+            # Coordinator lives, so the one known at start may be stale.
+            info = self._runtime.get_agent_info(record.pane_id)
+            if not info.exists:
+                log(TEARDOWN_TAB_SKIPPED, f"pane {record.pane_id} is gone; no tab to close")
+                return
+            self._runtime.close_tab(info.tab_id)
+            log(TEARDOWN_TAB_CLOSED, f"closed tab {info.tab_id}")
+
+        def forget() -> None:
+            self._agent_file.remove(pr_key)
+            log(TEARDOWN_FORGOTTEN, "removed agent file line")
+
+        # Each step is best effort: a failure is logged and the rest still run.
+        for step in (stop_sandbox, close_tab, forget):
+            try:
+                step()
+            except (AgentRuntimeError, OSError) as e:
+                log(TEARDOWN_STEP_FAILED, f"{step.__name__}: {e}")
 
     def _deliver_feedback(self, msg: dict[str, Any]) -> None:
         repo_full_name = msg["repo_full_name"]

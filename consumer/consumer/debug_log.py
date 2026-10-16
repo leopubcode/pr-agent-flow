@@ -12,6 +12,11 @@ PANE_MISSING = "pane missing"
 SANDBOX_ORPHANED = "sandbox orphaned"
 PROMPT_TIMED_OUT = "prompt timed out"
 NEVER_BECAME_IDLE = "never became idle"
+TEARDOWN_SANDBOX_STOPPED = "teardown sandbox stopped"
+TEARDOWN_TAB_CLOSED = "teardown tab closed"
+TEARDOWN_TAB_SKIPPED = "teardown tab skipped"
+TEARDOWN_FORGOTTEN = "teardown agent file line removed"
+TEARDOWN_STEP_FAILED = "teardown step failed"
 
 
 class DebugLog:
