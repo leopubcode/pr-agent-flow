@@ -3,9 +3,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from datetime import datetime, timedelta, timezone
+
 from consumer.dispatcher import Dispatcher, SandboxExitedError
 from consumer.github_client import PullRequestInfo
+from consumer.processed_ids import ProcessedIds
 from consumer.state_store import ACTIVE, CLOSED, ERROR, StateStore
+
+RETENTION_DAYS = 7
 
 
 @pytest.fixture
@@ -16,7 +21,12 @@ def state(tmp_path: Path) -> StateStore:
 
 
 @pytest.fixture
-def dispatcher(state: StateStore, tmp_path: Path):
+def processed_ids_path(tmp_path: Path) -> Path:
+    return tmp_path / "processed-ids"
+
+
+@pytest.fixture
+def dispatcher(state: StateStore, tmp_path: Path, processed_ids_path: Path):
     tmux = MagicMock()
     tmux.has_session.return_value = False
     tmux.wait_until_ready.return_value = True
@@ -31,6 +41,7 @@ def dispatcher(state: StateStore, tmp_path: Path):
 
     d = Dispatcher(
         state=state, tmux=tmux, github=github, workspace=workspace,
+        processed_ids=ProcessedIds(processed_ids_path, retention_days=RETENTION_DAYS),
         session_ready_timeout_seconds=5, allowed_comment_authors=frozenset({"octocat"}),
     )
     return d, tmux, github, workspace
@@ -126,17 +137,31 @@ def test_sandbox_exit_during_startup_raises_with_output(dispatcher, state: State
 
     tmux.send_instruction.assert_not_called()
     assert state.get("feature/x").status == ERROR
-    assert not state.is_duplicate("d1")
 
 
-def test_comment_from_non_allowlisted_author_is_ignored(dispatcher, state: StateStore):
+def test_message_that_raises_is_handled_again_on_redelivery(dispatcher):
+    d, tmux, github, workspace = dispatcher
+    tmux.wait_until_ready.return_value = False
+    tmux.has_session.return_value = False
+    with pytest.raises(SandboxExitedError):
+        d.handle_message(make_comment(delivery_id="d1"))
+
+    tmux.reset_mock()
+    tmux.wait_until_ready.return_value = True
+    d.handle_message(make_comment(delivery_id="d1"))
+
+    tmux.ensure_session.assert_called_once()
+    assert tmux.send_instruction.call_count == 2
+
+
+def test_comment_from_non_allowlisted_author_is_ignored(dispatcher, state: StateStore, processed_ids_path: Path):
     d, tmux, github, workspace = dispatcher
     d.handle_message({**make_comment(delivery_id="d1"), "actor": "leopubcode-agent"})
 
     tmux.ensure_session.assert_not_called()
     tmux.send_instruction.assert_not_called()
     assert state.get("feature/x") is None
-    assert state.is_duplicate("d1")
+    assert processed_ids_path.read_text().split()[0] == "d1"
 
 
 def test_allowlist_is_case_insensitive(dispatcher, state: StateStore):
@@ -159,5 +184,51 @@ def test_empty_allowlist_is_rejected(state: StateStore):
     with pytest.raises(ValueError):
         Dispatcher(
             state=state, tmux=MagicMock(), github=MagicMock(), workspace=MagicMock(),
+            processed_ids=MagicMock(),
             session_ready_timeout_seconds=5, allowed_comment_authors=frozenset(),
         )
+
+
+def _iso(dt: datetime) -> str:
+    return dt.isoformat()
+
+
+def test_delivery_already_in_processed_ids_file_is_skipped(dispatcher, processed_ids_path: Path):
+    d, tmux, github, workspace = dispatcher
+    recent = datetime.now(timezone.utc) - timedelta(hours=1)
+    processed_ids_path.write_text(f"seen-1 {_iso(recent)}\n")
+
+    d.handle_message(make_comment(delivery_id="seen-1"))
+
+    tmux.ensure_session.assert_not_called()
+    tmux.send_instruction.assert_not_called()
+    github.resolve_pull_request.assert_not_called()
+
+
+def test_handled_delivery_is_recorded_with_timestamp(dispatcher, processed_ids_path: Path):
+    d, tmux, github, workspace = dispatcher
+    before = datetime.now(timezone.utc)
+
+    d.handle_message(make_comment(delivery_id="d1"))
+
+    [line] = processed_ids_path.read_text().splitlines()
+    delivery_id, stamp = line.split()
+    assert delivery_id == "d1"
+    assert before <= datetime.fromisoformat(stamp) <= datetime.now(timezone.utc)
+
+
+def test_entries_older_than_retention_are_pruned(dispatcher, processed_ids_path: Path):
+    d, tmux, github, workspace = dispatcher
+    now = datetime.now(timezone.utc)
+    stale = now - timedelta(days=RETENTION_DAYS, hours=1)
+    fresh = now - timedelta(days=RETENTION_DAYS - 1)
+    processed_ids_path.write_text(f"old-1 {_iso(stale)}\nkept-1 {_iso(fresh)}\n")
+
+    d.handle_message(make_comment(delivery_id="d1"))
+
+    ids = [line.split()[0] for line in processed_ids_path.read_text().splitlines()]
+    assert ids == ["kept-1", "d1"]
+
+    tmux.reset_mock()
+    d.handle_message(make_comment(delivery_id="old-1"))
+    tmux.send_instruction.assert_called()

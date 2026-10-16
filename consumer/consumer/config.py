@@ -16,6 +16,7 @@ class Config:
     github_token: str
     workspace_root: Path
     state_db_path: Path
+    processed_ids_path: Path
     poll_wait_seconds: int
     max_messages_per_poll: int
     session_ready_timeout_seconds: int
@@ -36,6 +37,9 @@ class Config:
             github_token=_required("GITHUB_TOKEN"),
             workspace_root=Path(os.environ.get("WORKSPACE_ROOT", "~/pr-agent-flow-workspace")).expanduser(),
             state_db_path=Path(os.environ.get("STATE_DB_PATH", "~/.pr-agent-flow/state.db")).expanduser(),
+            processed_ids_path=Path(
+                os.environ.get("PROCESSED_IDS_PATH", "~/.pr-agent-flow/processed-ids")
+            ).expanduser(),
             poll_wait_seconds=int(os.environ.get("POLL_WAIT_SECONDS", "20")),
             max_messages_per_poll=int(os.environ.get("MAX_MESSAGES_PER_POLL", "10")),
             session_ready_timeout_seconds=int(os.environ.get("SESSION_READY_TIMEOUT_SECONDS", "60")),

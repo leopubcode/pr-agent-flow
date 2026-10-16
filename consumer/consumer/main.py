@@ -8,6 +8,7 @@ import boto3
 from .config import Config
 from .dispatcher import Dispatcher
 from .github_client import GithubClient
+from .processed_ids import ProcessedIds
 from .state_store import LOST, StateStore
 from .tmux_manager import TmuxManager
 from .workspace import Workspace
@@ -37,6 +38,7 @@ def run(config: Config) -> None:
         tmux=tmux,
         github=github,
         workspace=workspace,
+        processed_ids=ProcessedIds(config.processed_ids_path, config.delivery_retention_days),
         session_ready_timeout_seconds=config.session_ready_timeout_seconds,
         allowed_comment_authors=config.allowed_comment_authors,
     )
