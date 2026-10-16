@@ -1,11 +1,10 @@
 [project]
 name = "pr-agent-consumer"
 version = "0.1.0"
-description = "SQS consumer that drives a per-PR Claude Code orchestrator session via sbx + tmux"
+description = "SQS consumer that hands pull request Feedback to a per-PR Coordinator run by herdr and sbx-start"
 requires-python = ">=3.11"
 dependencies = [
     "boto3>=1.34",
-    "libtmux>=0.37",
     "PyGithub>=2.3",
     "python-dotenv>=1.0",
 ]
