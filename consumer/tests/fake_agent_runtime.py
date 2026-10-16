@@ -3,13 +3,14 @@
 Each started Coordinator gets a pane in `self.panes`. A new pane reports
 `starting_statuses` (one per `get_agent_info` call) before settling on idle.
 Everything asked of the runtime is recorded in `self.calls`, and prompts per
-pane in `self.prompts`.
+pane in `self.prompts`. Name a method in `self.failing` to make it raise
+`AgentRuntimeError` (after recording the call).
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from consumer.agent_runtime import GONE, IDLE, AgentInfo, StartedCoordinator
+from consumer.agent_runtime import GONE, IDLE, AgentInfo, AgentRuntimeError, StartedCoordinator
 
 
 class FakeAgentRuntime:
@@ -20,6 +21,7 @@ class FakeAgentRuntime:
         self.tabs: dict[str, str] = {}  # pane_id -> tab_id
         self.secrets: dict[str, str] = {}  # sandbox_name -> token
         self.prompts: dict[str, list[str]] = {}
+        self.failing: set[str] = set()  # method names that raise AgentRuntimeError
         self._started = 0
 
     def start_coordinator(self, branch: str, clone_dir: Path) -> StartedCoordinator:
@@ -51,9 +53,15 @@ class FakeAgentRuntime:
 
     def stop_sandbox(self, sandbox_name: str) -> None:
         self.calls.append(("stop_sandbox", sandbox_name))
+        self._maybe_fail("stop_sandbox")
 
     def close_tab(self, tab_id: str) -> None:
         self.calls.append(("close_tab", tab_id))
+        self._maybe_fail("close_tab")
+
+    def _maybe_fail(self, method: str) -> None:
+        if method in self.failing:
+            raise AgentRuntimeError(f"{method} failed (fake)")
 
     # -- helpers for assertions --
 

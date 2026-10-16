@@ -276,3 +276,90 @@ def test_message_that_raises_is_not_recorded_and_is_handled_again_on_redelivery(
     env.runtime.starting_statuses = ()
     env.dispatcher.handle_message(make_comment(delivery_id="d1"))
     assert env.processed_ids() == ["d1"]
+
+
+def make_close(delivery_id="c1", branch="feature/x", repo="org/repo", **overrides):
+    msg = {
+        "schema_version": 1,
+        "delivery_id": delivery_id,
+        "event_type": "pull_request",
+        "repo_full_name": repo,
+        "pr_number": 1,
+        "branch": branch,
+        "base_branch": "main",
+        "is_merged": False,
+        "actor": "octocat",
+        "received_at": "2026-01-01T00:00:00Z",
+    }
+    msg.update(overrides)
+    return msg
+
+
+@pytest.mark.parametrize("is_merged", [False, True])
+def test_closing_a_pr_stops_its_sandbox_closes_its_tab_and_forgets_it(env, is_merged):
+    env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+
+    env.dispatcher.handle_message(make_close(is_merged=is_merged))
+
+    assert env.runtime.call_names()[-2:] == ["stop_sandbox", "close_tab"]
+    assert ("stop_sandbox", "sbx-1") in env.runtime.calls
+    assert ("close_tab", "tab-1") in env.runtime.calls
+    assert env.agent_lines() == []
+
+
+def test_teardown_runs_when_a_non_reviewer_closes_the_pr(env):
+    env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+
+    env.dispatcher.handle_message(make_close(actor="stranger"))
+
+    assert ("stop_sandbox", "sbx-1") in env.runtime.calls
+    assert env.agent_lines() == []
+
+
+def test_missing_pane_skips_the_tab_step_but_still_stops_sandbox_and_forgets_it(env):
+    env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+    del env.runtime.panes["pane-1"]  # the Operator closed it by hand
+
+    env.dispatcher.handle_message(make_close())
+
+    assert ("stop_sandbox", "sbx-1") in env.runtime.calls
+    assert "close_tab" not in env.runtime.call_names()
+    assert env.agent_lines() == []
+    kinds = [line.split("\t")[1:4] for line in env.debug_lines()]
+    assert ["org/repo:feature/x", "pane-1", "teardown tab skipped"] in kinds
+
+
+@pytest.mark.parametrize("failing_step", ["stop_sandbox", "close_tab"])
+def test_a_failing_teardown_step_is_logged_and_later_steps_still_run(env, failing_step):
+    env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+    env.runtime.failing.add(failing_step)
+
+    env.dispatcher.handle_message(make_close())
+
+    assert env.runtime.call_names()[-2:] == ["stop_sandbox", "close_tab"]
+    assert env.agent_lines() == []
+    failures = [line.split("\t") for line in env.debug_lines() if line.split("\t")[3] == "teardown step failed"]
+    assert len(failures) == 1
+    assert failing_step in failures[0][4]
+    assert env.processed_ids()[-1] == "c1"
+
+
+def test_closing_a_pr_with_no_recorded_coordinator_does_nothing(env, caplog):
+    with caplog.at_level("INFO"):
+        env.dispatcher.handle_message(make_close())
+
+    assert env.runtime.calls == []
+    assert env.debug_lines() == []
+    assert "org/repo:feature/x" in caplog.text
+    assert env.processed_ids() == ["c1"]
+
+
+def test_feedback_after_close_starts_a_fresh_coordinator(env):
+    env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+    env.dispatcher.handle_message(make_close())
+
+    env.dispatcher.handle_message(make_comment(delivery_id="d2", body="after reopen"))
+
+    assert len(env.runtime.started()) == 2
+    assert env.agent_lines() == [["org/repo:feature/x", "pane-2", "feature/x sbx-2", "sbx-2"]]
+    assert "after reopen" in env.runtime.prompts["pane-2"][-1]

@@ -8,6 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 MISSING_REPO_CONFIG = "missing repo config"
+TEARDOWN_SANDBOX_STOPPED = "teardown sandbox stopped"
+TEARDOWN_TAB_CLOSED = "teardown tab closed"
+TEARDOWN_TAB_SKIPPED = "teardown tab skipped"
+TEARDOWN_FORGOTTEN = "teardown agent file line removed"
+TEARDOWN_STEP_FAILED = "teardown step failed"
 
 
 class DebugLog:
