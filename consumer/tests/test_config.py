@@ -13,7 +13,6 @@ def test_parse_logins():
 @pytest.fixture
 def required_env(monkeypatch):
     monkeypatch.setenv("SQS_QUEUE_URL", "https://sqs.example/queue")
-    monkeypatch.setenv("GITHUB_TOKEN", "t")
     monkeypatch.setenv("ALLOWED_COMMENT_AUTHORS", "octocat")
     monkeypatch.delenv("PROCESSED_IDS_PATH", raising=False)
 

@@ -22,3 +22,6 @@ infra/.build/
 /agents.tsv
 /agents.tsv.tmp
 /debug.log
+
+# Claude Code agent worktrees
+.claude/worktrees/
