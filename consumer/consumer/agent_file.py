@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from .atomic_write import atomic_write_text
+
 
 @dataclass(frozen=True)
 class AgentRecord:
@@ -52,9 +54,7 @@ class AgentFile:
         return records
 
     def _write(self, records: list[AgentRecord]) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_name(self._path.name + ".tmp")
-        tmp.write_text(
-            "".join(f"{r.pr_key}\t{r.pane_id}\t{r.tab_label}\t{r.sandbox_name}\n" for r in records)
+        atomic_write_text(
+            self._path,
+            "".join(f"{r.pr_key}\t{r.pane_id}\t{r.tab_label}\t{r.sandbox_name}\n" for r in records),
         )
-        tmp.replace(self._path)

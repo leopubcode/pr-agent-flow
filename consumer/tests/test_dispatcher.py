@@ -2,7 +2,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from consumer.agent_file import AgentFile
 from consumer.agent_runtime import AgentRuntimeError, PromptTimeout
 from consumer.debug_log import DebugLog
@@ -17,7 +16,7 @@ RETENTION_DAYS = 7
 
 
 class FakeGithub:
-    """Fake GitHub client factory: `github_for(token)` returns a client bound to that token."""
+    """Fake GitHub client factory: `github_with_token(token)` returns a client bound to that token."""
 
     def __init__(self):
         self.branches: dict[tuple[str, int], str] = {("org/repo", 1): "feature/x"}
@@ -58,7 +57,7 @@ class Env:
         self.processed_ids_path = tmp_path / "processed-ids"
         self.dispatcher = Dispatcher(
             runtime=self.runtime,
-            github_for=self.github,
+            github_with_token=self.github,
             repo_config=RepoConfig(self.repo_config_path),
             agent_file=AgentFile(self.agent_file_path),
             debug_log=DebugLog(self.debug_log_path),
@@ -236,7 +235,11 @@ def test_pr_comment_on_unconfigured_repository_is_logged_and_not_looked_up(env):
 
     assert env.github.lookups == []
     assert env.runtime.calls == []
-    assert env.debug_lines()[0].split("\t")[3] == "missing repo config"
+    [line] = env.debug_lines()
+    _, pr_key, pane_id, kind, detail = line.split("\t")
+    # The branch is unknown without a lookup, so the PR Key's branch is the `-` placeholder.
+    assert (pr_key, pane_id, kind) == ("org/unknown:-", "-", "missing repo config")
+    assert "org/unknown#1" in detail
 
 
 def test_feedback_from_non_reviewer_is_ignored(env):
@@ -263,7 +266,7 @@ def test_duplicate_delivery_is_delivered_once(env):
 def test_empty_allowlist_is_rejected(tmp_path):
     with pytest.raises(ValueError):
         Dispatcher(
-            processed_ids=ProcessedIds(tmp_path / "p", RETENTION_DAYS), runtime=FakeAgentRuntime(), github_for=FakeGithub(),
+            processed_ids=ProcessedIds(tmp_path / "p", RETENTION_DAYS), runtime=FakeAgentRuntime(), github_with_token=FakeGithub(),
             repo_config=RepoConfig(tmp_path / "r"), agent_file=AgentFile(tmp_path / "a"),
             debug_log=DebugLog(tmp_path / "d"), ready_timeout_seconds=5,
             allowed_comment_authors=frozenset(),
@@ -398,9 +401,30 @@ def test_new_coordinator_that_never_becomes_idle_is_logged_and_raised(tmp_path):
 
     assert env.runtime.prompts["pane-1"] == []
     assert env.processed_ids() == []
+    assert env.agent_lines() == []
+    assert "stop_sandbox" not in env.runtime.call_names()
+    lines = [line.split("\t") for line in env.debug_lines()]
+    assert [(pr_key, pane, kind) for _, pr_key, pane, kind, _ in lines] == [
+        ("org/repo:feature/x", "pane-1", "never became idle"),
+        ("org/repo:feature/x", "pane-1", "sandbox orphaned"),
+    ]
+    assert "sbx-1" in lines[1][4]
+
+
+def test_failing_to_set_the_new_sandboxs_secret_logs_it_as_orphaned_and_raises(env):
+    env.runtime.failing.add("set_secret")
+
+    with pytest.raises(AgentRuntimeError):
+        env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+
+    assert env.runtime.prompts["pane-1"] == []
+    assert env.processed_ids() == []
+    assert env.agent_lines() == []
+    assert "stop_sandbox" not in env.runtime.call_names()
     [line] = env.debug_lines()
-    _, pr_key, pane_id, kind, _ = line.split("\t")
-    assert (pr_key, pane_id, kind) == ("org/repo:feature/x", "pane-1", "never became idle")
+    _, pr_key, pane_id, kind, detail = line.split("\t")
+    assert (pr_key, pane_id, kind) == ("org/repo:feature/x", "pane-1", "sandbox orphaned")
+    assert "sbx-1" in detail
 
 
 def make_close(delivery_id="c1", branch="feature/x", repo="org/repo", **overrides):
@@ -454,14 +478,14 @@ def test_missing_pane_skips_the_tab_step_but_still_stops_sandbox_and_forgets_it(
     assert ["org/repo:feature/x", "pane-1", "teardown tab skipped"] in kinds
 
 
-@pytest.mark.parametrize("failing_step", ["stop_sandbox", "close_tab"])
+@pytest.mark.parametrize("failing_step", ["stop_sandbox", "close_tab", "get_agent_info"])
 def test_a_failing_teardown_step_is_logged_and_later_steps_still_run(env, failing_step):
     env.dispatcher.handle_message(make_comment(delivery_id="d1"))
     env.runtime.failing.add(failing_step)
 
     env.dispatcher.handle_message(make_close())
 
-    assert env.runtime.call_names()[-2:] == ["stop_sandbox", "close_tab"]
+    assert ("stop_sandbox", "sbx-1") in env.runtime.calls
     assert env.agent_lines() == []
     failures = [line.split("\t") for line in env.debug_lines() if line.split("\t")[3] == "teardown step failed"]
     assert len(failures) == 1

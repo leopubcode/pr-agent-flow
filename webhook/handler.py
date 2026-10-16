@@ -13,7 +13,7 @@ import hashlib
 import hmac
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -58,7 +58,7 @@ def _is_fork(payload: dict[str, Any]) -> bool | None:
 
 def normalize(gh_event: str, action: str | None, payload: dict[str, Any], delivery_id: str) -> dict[str, Any] | None:
     """Return a normalized message dict, or None if this event should be ignored."""
-    received_at = datetime.now(timezone.utc).isoformat()
+    received_at = datetime.now(UTC).isoformat()
 
     base = {
         "schema_version": SCHEMA_VERSION,

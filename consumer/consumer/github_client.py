@@ -10,7 +10,7 @@ class PullRequestInfo:
     branch: str
     base_branch: str
     clone_url: str
-    is_fork: bool = False
+    is_fork: bool
     """The head branch lives in a different repository from the base branch."""
 
 

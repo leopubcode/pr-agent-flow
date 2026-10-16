@@ -5,7 +5,7 @@ from typing import Any
 STARTUP_PROMPT_TEMPLATE = """\
 You are the Coordinator for pull request #{pr_number} in {repo_full_name} \
 (branch `{branch}`). Feedback on this pull request (PR comments, reviews and \
-inline review comments) will be sent to you in this session as it arrives.
+inline review comments) will be sent to you here, as new messages, as it arrives.
 
 For each piece of Feedback:
 - Hand it to exactly one Implementer: launch a subagent with the Task tool \

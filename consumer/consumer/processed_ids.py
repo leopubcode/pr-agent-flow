@@ -7,8 +7,10 @@ ignored and dropped the next time the file is rewritten.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+from .atomic_write import atomic_write_text
 
 
 class ProcessedIds:
@@ -21,13 +23,13 @@ class ProcessedIds:
 
     def record(self, delivery_id: str) -> None:
         entries = self._read()
-        entries[delivery_id] = datetime.now(timezone.utc)
+        entries[delivery_id] = datetime.now(UTC)
         self._write(entries)
 
     def _read(self) -> dict[str, datetime]:
         if not self._path.exists():
             return {}
-        cutoff = datetime.now(timezone.utc) - self._retention
+        cutoff = datetime.now(UTC) - self._retention
         entries: dict[str, datetime] = {}
         for line in self._path.read_text().splitlines():
             parts = line.split()
@@ -40,7 +42,4 @@ class ProcessedIds:
         return entries
 
     def _write(self, entries: dict[str, datetime]) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_name(self._path.name + ".tmp")
-        tmp.write_text("".join(f"{i} {ts.isoformat()}\n" for i, ts in entries.items()))
-        tmp.replace(self._path)
+        atomic_write_text(self._path, "".join(f"{i} {ts.isoformat()}\n" for i, ts in entries.items()))

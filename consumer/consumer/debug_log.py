@@ -1,6 +1,11 @@
 """The debug log: a gitignored text file, one tab-separated line per event.
 
 Fields: UTC timestamp, PR Key, pane ID (`-` if none), event kind, detail.
+
+The PR Key field always holds a PR Key built by `pr_key.pr_key`, never a PR
+number. When the branch isn't known yet (a PR Comment on a repository missing
+from the repo config file, so its branch can't be looked up), it is
+`owner/repo:-`, and the PR number goes in the detail.
 """
 from __future__ import annotations
 

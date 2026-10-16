@@ -45,10 +45,12 @@ class FakeAgentRuntime:
 
     def set_secret(self, sandbox_name: str, token: str) -> None:
         self.calls.append(("set_secret", sandbox_name, token))
+        self._maybe_fail("set_secret")
         self.secrets[sandbox_name] = token
 
     def get_agent_info(self, pane_id: str) -> AgentInfo:
         self.calls.append(("get_agent_info", pane_id))
+        self._maybe_fail("get_agent_info")
         if pane_id not in self.panes:
             return GONE
         pending = self.panes[pane_id]

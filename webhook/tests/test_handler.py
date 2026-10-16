@@ -1,7 +1,6 @@
 import hashlib
 import hmac
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -9,8 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import handler  # noqa: E402
-
+import handler
 
 SECRET = "test-secret"
 
