@@ -10,6 +10,8 @@ class PullRequestInfo:
     branch: str
     base_branch: str
     clone_url: str
+    is_fork: bool = False
+    """The head branch lives in a different repository from the base branch."""
 
 
 class GithubClient:
@@ -30,4 +32,6 @@ class GithubClient:
             branch=pr.head.ref,
             base_branch=pr.base.ref,
             clone_url=repo.clone_url,
+            # A deleted fork leaves head.repo empty; it is still not this repository.
+            is_fork=pr.head.repo is None or pr.head.repo.full_name != pr.base.repo.full_name,
         )
