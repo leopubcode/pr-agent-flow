@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 MISSING_REPO_CONFIG = "missing repo config"
+PANE_MISSING = "pane missing"
+SANDBOX_ORPHANED = "sandbox orphaned"
 TEARDOWN_SANDBOX_STOPPED = "teardown sandbox stopped"
 TEARDOWN_TAB_CLOSED = "teardown tab closed"
 TEARDOWN_TAB_SKIPPED = "teardown tab skipped"

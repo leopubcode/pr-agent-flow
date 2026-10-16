@@ -10,6 +10,8 @@ from .agent_file import AgentFile, AgentRecord
 from .agent_runtime import IDLE, AgentRuntime, AgentRuntimeError
 from .debug_log import (
     MISSING_REPO_CONFIG,
+    PANE_MISSING,
+    SANDBOX_ORPHANED,
     TEARDOWN_FORGOTTEN,
     TEARDOWN_SANDBOX_STOPPED,
     TEARDOWN_STEP_FAILED,
@@ -125,6 +127,10 @@ class Dispatcher:
 
         pr_key = f"{repo_full_name}:{branch}"
         record = self._agent_file.get(pr_key)
+        if record is not None and not self._runtime.get_agent_info(record.pane_id).exists:
+            # Herdr never reuses pane IDs, so a missing pane means this Coordinator is gone.
+            self._log_gone_coordinator(record)
+            record = None
         if record is None:
             repo = self._require_repo_config(repo_full_name, pr_key)
             if repo is None:
@@ -141,6 +147,18 @@ class Dispatcher:
                 f"{repo_full_name} has no clone path and token in the repo config file; no Coordinator started",
             )
         return repo
+
+    def _log_gone_coordinator(self, record: AgentRecord) -> None:
+        self._debug_log.write(
+            PANE_MISSING, record.pr_key,
+            f"herdr reports no pane {record.pane_id}; starting a new Coordinator",
+            pane_id=record.pane_id,
+        )
+        self._debug_log.write(
+            SANDBOX_ORPHANED, record.pr_key,
+            f"sandbox {record.sandbox_name} left running; stop it by hand",
+            pane_id=record.pane_id,
+        )
 
     def _start_coordinator(self, pr_key: str, repo: RepoEntry, pr_number: int, branch: str) -> AgentRecord:
         started = self._runtime.start_coordinator(branch, repo.clone_path)

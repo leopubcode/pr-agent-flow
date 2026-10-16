@@ -63,6 +63,12 @@ class FakeAgentRuntime:
         if method in self.failing:
             raise AgentRuntimeError(f"{method} failed (fake)")
 
+    # -- helpers for arranging scenarios --
+
+    def remove_pane(self, pane_id: str) -> None:
+        """Simulate a pane that was closed outside the consumer (its sandbox keeps running)."""
+        del self.panes[pane_id]
+
     # -- helpers for assertions --
 
     def call_names(self) -> list[str]:
