@@ -5,46 +5,36 @@ import logging
 
 import boto3
 
+from .agent_file import AgentFile
 from .config import Config
+from .debug_log import DebugLog
 from .dispatcher import Dispatcher
 from .github_client import GithubClient
+from .herdr_runtime import HerdrSbxRuntime
 from .processed_ids import ProcessedIds
-from .state_store import LOST, StateStore
-from .tmux_manager import TmuxManager
-from .workspace import Workspace
+from .repo_config import RepoConfig
 
 logger = logging.getLogger(__name__)
 
 
-def _reconcile_on_startup(state: StateStore, tmux: TmuxManager) -> None:
-    """Mark any tracked session whose tmux session no longer exists as lost.
-
-    It will be re-provisioned the next time an event arrives for that branch.
-    """
-    for row in state.all_active():
-        if not tmux.has_session(row.session_name):
-            logger.warning("Session '%s' not found in tmux on startup, marking lost", row.session_name)
-            state.set_status(row.branch, LOST)
-
-
 def run(config: Config) -> None:
     sqs = boto3.client("sqs", region_name=config.aws_region)
-    state = StateStore(config.state_db_path)
-    tmux = TmuxManager()
-    github = GithubClient(config.github_token)
-    workspace = Workspace(config.workspace_root)
     dispatcher = Dispatcher(
-        state=state,
-        tmux=tmux,
-        github=github,
-        workspace=workspace,
+        runtime=HerdrSbxRuntime(
+            sbx_start_command=config.sbx_start_command,
+            prompt_timeout_seconds=config.prompt_timeout_seconds,
+        ),
+        github_for=GithubClient,
+        repo_config=RepoConfig(config.repo_config_path),
+        agent_file=AgentFile(config.agent_file_path),
+        debug_log=DebugLog(config.debug_log_path),
         processed_ids=ProcessedIds(config.processed_ids_path, config.delivery_retention_days),
-        session_ready_timeout_seconds=config.session_ready_timeout_seconds,
+        ready_timeout_seconds=config.session_ready_timeout_seconds,
         allowed_comment_authors=config.allowed_comment_authors,
     )
-    logger.info("Accepting comments from: %s", ", ".join(sorted(config.allowed_comment_authors)))
-
-    _reconcile_on_startup(state, tmux)
+    logger.info("Accepting Feedback from: %s", ", ".join(sorted(config.allowed_comment_authors)))
+    logger.info("Repo config %s, agent file %s, debug log %s",
+                config.repo_config_path, config.agent_file_path, config.debug_log_path)
 
     logger.info("Polling %s", config.sqs_queue_url)
     while True:
@@ -62,8 +52,6 @@ def run(config: Config) -> None:
                 logger.exception("Failed to process message %s; leaving it for redelivery", raw.get("MessageId"))
                 continue
             sqs.delete_message(QueueUrl=config.sqs_queue_url, ReceiptHandle=raw["ReceiptHandle"])
-
-        state.prune(config.delivery_retention_days)
 
 
 def main() -> None:

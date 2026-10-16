@@ -1,41 +1,48 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
 from typing import Any
 
-from . import prompts, sandbox
+from . import prompts
+from .agent_file import AgentFile, AgentRecord
+from .agent_runtime import IDLE, AgentRuntime, AgentRuntimeError
+from .debug_log import MISSING_REPO_CONFIG, DebugLog
 from .github_client import GithubClient
 from .processed_ids import ProcessedIds
-from .state_store import ACTIVE, CLOSED, ERROR, StateStore
-from .tmux_manager import TmuxManager
-from .workspace import Workspace
+from .repo_config import RepoConfig, RepoEntry
 
 logger = logging.getLogger(__name__)
 
 
-class SandboxExitedError(RuntimeError):
-    pass
+class CoordinatorNotReadyError(AgentRuntimeError):
+    """A newly started Coordinator didn't report `idle` within the ready timeout."""
 
 
 class Dispatcher:
     def __init__(
         self,
-        state: StateStore,
-        tmux: TmuxManager,
-        github: GithubClient,
-        workspace: Workspace,
+        runtime: AgentRuntime,
+        github_for: Callable[[str], GithubClient],
+        repo_config: RepoConfig,
+        agent_file: AgentFile,
+        debug_log: DebugLog,
         processed_ids: ProcessedIds,
-        session_ready_timeout_seconds: int,
+        ready_timeout_seconds: float,
         allowed_comment_authors: frozenset[str],
+        ready_poll_interval_seconds: float = 2.0,
     ):
         if not allowed_comment_authors:
             raise ValueError("allowed_comment_authors must not be empty")
-        self._state = state
-        self._tmux = tmux
-        self._github = github
-        self._workspace = workspace
+        self._runtime = runtime
+        self._github_for = github_for
+        self._repo_config = repo_config
+        self._agent_file = agent_file
+        self._debug_log = debug_log
         self._processed_ids = processed_ids
-        self._session_ready_timeout_seconds = session_ready_timeout_seconds
+        self._ready_timeout_seconds = ready_timeout_seconds
+        self._ready_poll_interval_seconds = ready_poll_interval_seconds
         self._allowed_comment_authors = allowed_comment_authors
 
     def handle_message(self, msg: dict[str, Any]) -> None:
@@ -46,84 +53,68 @@ class Dispatcher:
 
         if msg["event_type"] == "pull_request":
             # The webhook Lambda only ever emits event_type "pull_request" for
-            # the closed action (see webhook/handler.py normalize()) -- every
-            # other tracked event type is a comment/review.
-            self._teardown(msg)
+            # the closed action (see webhook/handler.py normalize()).
+            # Teardown of the Coordinator is not built yet.
+            logger.info("PR %s#%s closed; teardown not implemented", msg["repo_full_name"], msg["pr_number"])
         elif (msg.get("actor") or "").lower() not in self._allowed_comment_authors:
-            # Covers both strangers on public repos and the agent's own machine
-            # user, whose comments would otherwise loop back into the queue.
+            # Covers both strangers on public repos and the Agent Account,
+            # whose comments would otherwise loop back into the queue.
             logger.info(
                 "Ignoring %s on %s#%s from non-allowlisted author @%s",
                 msg["event_type"], msg["repo_full_name"], msg["pr_number"], msg.get("actor"),
             )
         else:
-            self._dispatch_comment(msg)
+            self._deliver_feedback(msg)
 
         self._processed_ids.record(delivery_id)
 
-    def _teardown(self, msg: dict[str, Any]) -> None:
-        repo_full_name = msg["repo_full_name"]
-        pr_number = msg["pr_number"]
-        row = self._state.find_by_repo_pr(repo_full_name, pr_number)
-        if row is None:
-            logger.info("No tracked session for %s#%s, nothing to tear down", repo_full_name, pr_number)
-            return
-
-        logger.info("Tearing down session for %s#%s (branch %s)", repo_full_name, pr_number, row.branch)
-        self._tmux.kill_session(row.session_name)
-        sandbox.stop(row.sandbox_name)
-        self._workspace.cleanup(repo_full_name, row.branch)
-        self._state.set_status(row.branch, CLOSED)
-
-    def _dispatch_comment(self, msg: dict[str, Any]) -> None:
+    def _deliver_feedback(self, msg: dict[str, Any]) -> None:
         repo_full_name = msg["repo_full_name"]
         pr_number = msg["pr_number"]
         branch = msg.get("branch")
 
         if not branch:
-            pr_info = self._github.resolve_pull_request(repo_full_name, pr_number)
-            branch = pr_info.branch
-            msg = {**msg, "branch": branch, "base_branch": pr_info.base_branch}
+            # PR Comments carry no branch; resolving it needs the repo's token.
+            repo = self._require_repo_config(repo_full_name, f"{repo_full_name}#{pr_number}")
+            if repo is None:
+                return
+            branch = self._github_for(repo.token).resolve_pull_request(repo_full_name, pr_number).branch
 
-        row = self._state.get(branch)
-        if row is None or not self._tmux.has_session(row.session_name):
-            self._provision_session(msg, branch)
+        pr_key = f"{repo_full_name}:{branch}"
+        record = self._agent_file.get(pr_key)
+        if record is None:
+            repo = self._require_repo_config(repo_full_name, pr_key)
+            if repo is None:
+                return
+            record = self._start_coordinator(pr_key, repo, pr_number, branch)
 
-        self._tmux.send_instruction(branch, prompts.followup_prompt(msg))
-        self._state.touch_last_activity(branch)
+        self._runtime.prompt(record.pane_id, prompts.feedback_prompt(msg))
 
-    def _provision_session(self, msg: dict[str, Any], branch: str) -> None:
-        repo_full_name = msg["repo_full_name"]
-        pr_number = msg["pr_number"]
-        pr_info = self._github.resolve_pull_request(repo_full_name, pr_number)
+    def _require_repo_config(self, repo_full_name: str, pr_key: str) -> RepoEntry | None:
+        repo = self._repo_config.get(repo_full_name)
+        if repo is None:
+            self._debug_log.write(
+                MISSING_REPO_CONFIG, pr_key,
+                f"{repo_full_name} has no clone path and token in the repo config file; no Coordinator started",
+            )
+        return repo
 
-        workspace_path = self._workspace.ensure_branch_checkout(repo_full_name, pr_info.clone_url, branch)
-        session_name = branch
+    def _start_coordinator(self, pr_key: str, repo: RepoEntry, pr_number: int, branch: str) -> AgentRecord:
+        started = self._runtime.start_coordinator(branch, repo.clone_path)
+        self._runtime.set_secret(started.sandbox_name, repo.token)
+        self._wait_until_idle(started.pane_id)
 
-        self._state.upsert(
-            branch=branch,
-            repo_full_name=repo_full_name,
-            pr_number=pr_number,
-            session_name=session_name,
-            workspace_path=str(workspace_path),
-            sandbox_name=session_name,
-            status="provisioning",
-        )
+        record = AgentRecord(pr_key, started.pane_id, started.tab_label, started.sandbox_name)
+        self._agent_file.put(record)
+        self._runtime.prompt(record.pane_id, prompts.startup_prompt(repo.repo_full_name, pr_number, branch))
+        return record
 
-        command = sandbox.run_command()
-        self._tmux.ensure_session(session_name, str(workspace_path), command)
-
-        if not self._tmux.wait_until_ready(session_name, self._session_ready_timeout_seconds):
-            self._state.set_status(branch, ERROR)
-            if not self._tmux.has_session(session_name):
-                output = self._tmux.last_output(session_name) or "(no output captured)"
-                raise SandboxExitedError(
-                    f"'{command}' exited during startup for '{session_name}'; last output:\n{output}"
-                )
-            logger.warning("Session '%s' did not stabilize within timeout; proceeding anyway", session_name)
-        else:
-            self._state.set_status(branch, ACTIVE)
-
-        self._tmux.send_instruction(
-            session_name, prompts.initial_system_prompt(repo_full_name, pr_number, branch)
-        )
+    def _wait_until_idle(self, pane_id: str) -> None:
+        deadline = time.monotonic() + self._ready_timeout_seconds
+        while True:
+            info = self._runtime.get_agent_info(pane_id)
+            if info.exists and info.agent_status == IDLE:
+                return
+            if time.monotonic() >= deadline:
+                raise CoordinatorNotReadyError(f"pane {pane_id} not idle after {self._ready_timeout_seconds}s")
+            time.sleep(self._ready_poll_interval_seconds)

@@ -16,3 +16,9 @@ infra/.build/
 
 .pytest_cache/
 .ruff_cache/
+
+# Consumer local state (Operator-owned; repos.txt holds tokens)
+/repos.txt
+/agents.tsv
+/agents.tsv.tmp
+/debug.log
