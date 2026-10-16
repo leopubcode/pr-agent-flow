@@ -23,6 +23,7 @@ from .debug_log import (
     DebugLog,
 )
 from .github_client import GithubClient
+from .pr_key import pr_key as make_pr_key
 from .processed_ids import ProcessedIds
 from .repo_config import RepoConfig, RepoEntry
 
@@ -37,7 +38,7 @@ class Dispatcher:
     def __init__(
         self,
         runtime: AgentRuntime,
-        github_for: Callable[[str], GithubClient],
+        github_with_token: Callable[[str], GithubClient],
         repo_config: RepoConfig,
         agent_file: AgentFile,
         debug_log: DebugLog,
@@ -49,7 +50,7 @@ class Dispatcher:
         if not allowed_comment_authors:
             raise ValueError("allowed_comment_authors must not be empty")
         self._runtime = runtime
-        self._github_for = github_for
+        self._github_with_token = github_with_token
         self._repo_config = repo_config
         self._agent_file = agent_file
         self._debug_log = debug_log
@@ -82,7 +83,7 @@ class Dispatcher:
         self._processed_ids.record(delivery_id)
 
     def _tear_down(self, msg: dict[str, Any]) -> None:
-        pr_key = f"{msg['repo_full_name']}:{msg['branch']}"
+        pr_key = make_pr_key(msg["repo_full_name"], msg["branch"])
         record = self._agent_file.get(pr_key)
         if record is None:
             logger.info("PR %s closed with no recorded Coordinator; nothing to tear down", pr_key)
@@ -124,13 +125,13 @@ class Dispatcher:
 
         if not branch or is_fork is None:
             # PR Comments carry no branch or fork status; resolving them needs the repo's token.
-            repo = self._require_repo_config(repo_full_name, f"{repo_full_name}#{pr_number}")
+            repo = self._require_repo_config(repo_full_name, pr_number, make_pr_key(repo_full_name, branch))
             if repo is None:
                 return
-            pr = self._github_for(repo.token).resolve_pull_request(repo_full_name, pr_number)
+            pr = self._github_with_token(repo.token).resolve_pull_request(repo_full_name, pr_number)
             branch, is_fork = pr.branch, pr.is_fork
 
-        pr_key = f"{repo_full_name}:{branch}"
+        pr_key = make_pr_key(repo_full_name, branch)
         if is_fork:
             # sbx-start <branch> and pushing to origin can't reach a fork's branch.
             self._debug_log.write(FORK_PR_IGNORED, pr_key, f"{repo_full_name}#{pr_number} comes from a fork; no Coordinator used")
@@ -142,7 +143,7 @@ class Dispatcher:
             self._log_gone_coordinator(record)
             record = None
         if record is None:
-            repo = self._require_repo_config(repo_full_name, pr_key)
+            repo = self._require_repo_config(repo_full_name, pr_number, pr_key)
             if repo is None:
                 return
             record = self._start_coordinator(pr_key, repo, pr_number, branch)
@@ -157,12 +158,12 @@ class Dispatcher:
             self._debug_log.write(PROMPT_TIMED_OUT, pr_key, str(exc), pane_id=pane_id)
             raise
 
-    def _require_repo_config(self, repo_full_name: str, pr_key: str) -> RepoEntry | None:
+    def _require_repo_config(self, repo_full_name: str, pr_number: int, pr_key: str) -> RepoEntry | None:
         repo = self._repo_config.get(repo_full_name)
         if repo is None:
             self._debug_log.write(
                 MISSING_REPO_CONFIG, pr_key,
-                f"{repo_full_name} has no clone path and token in the repo config file; no Coordinator started",
+                f"{repo_full_name}#{pr_number}: no clone path and token in the repo config file; no Coordinator started",
             )
         return repo
 
@@ -180,8 +181,17 @@ class Dispatcher:
 
     def _start_coordinator(self, pr_key: str, repo: RepoEntry, pr_number: int, branch: str) -> AgentRecord:
         started = self._runtime.start_coordinator(branch, repo.clone_path)
-        self._runtime.set_secret(started.sandbox_name, repo.token)
-        self._wait_until_idle(pr_key, started.pane_id)
+        try:
+            self._runtime.set_secret(started.sandbox_name, repo.token)
+            self._wait_until_idle(pr_key, started.pane_id)
+        except AgentRuntimeError:
+            # Not yet in the agent file, so nothing would ever find or stop this sandbox.
+            self._debug_log.write(
+                SANDBOX_ORPHANED, pr_key,
+                f"new sandbox {started.sandbox_name} left running; stop it by hand",
+                pane_id=started.pane_id,
+            )
+            raise
 
         record = AgentRecord(pr_key, started.pane_id, started.tab_label, started.sandbox_name)
         self._agent_file.put(record)

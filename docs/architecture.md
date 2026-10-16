@@ -56,6 +56,7 @@ so two repositories with the same branch name never share one.
     used to skip duplicate deliveries from GitHub or SQS and pruned by age
     (`DELIVERY_RETENTION_DAYS`). An ID is recorded only after its message was handled.
   - `debug_log.py` is the **debug log** (see below).
+  - `pr_key.py` builds every PR Key (`owner/repo:branch`), for the agent file and debug log alike.
   - `github_client.py` makes read-only lookups (a PR Comment's branch and fork status) with the
     repository's own token. Pushing happens from inside the sandbox with its injected
     credentials, never through this client.
@@ -75,7 +76,7 @@ so two repositories with the same branch name never share one.
     7. Otherwise start a new Coordinator: if there was a line, log `pane missing` and
        `sandbox orphaned` (the old sandbox is left running). Look up the repo config, run
        `sbx-start <branch>` from the repository's clone, set the sandbox's GitHub secret, poll
-       `herdr agent get` until the agent is `idle` (`SESSION_READY_TIMEOUT_SECONDS`), write the
+       `herdr agent get` until the agent is `idle` (`COORDINATOR_READY_TIMEOUT_SECONDS`), write the
        agent-file line, then send the startup prompt followed by the Feedback.
 
 ### Failure handling
@@ -84,7 +85,9 @@ so two repositories with the same branch name never share one.
   message stays in SQS for redelivery and eventually lands in the DLQ. No replacement
   Coordinator is started.
 - **Never became idle**: a new Coordinator that isn't `idle` in time is logged and raised; the
-  message is redelivered.
+  message is redelivered. Since it never got an agent-file line, its sandbox is also logged as
+  `sandbox orphaned` (left running; stop it by hand). The same `sandbox orphaned` line is written
+  when setting the new sandbox's GitHub secret fails.
 - **Missing repo config**: a repository with no clone path or token gets no Coordinator and a
   `missing repo config` line. The consumer never falls back to broader credentials.
 
@@ -150,17 +153,22 @@ One tab-separated line per unusual event: UTC timestamp, PR Key, pane ID (`-` if
 kind, detail. Event kinds: `missing repo config`, `fork PR ignored`, `pane missing`,
 `sandbox orphaned`, `prompt timed out`, `never became idle`, and the teardown steps
 (`teardown sandbox stopped`, `teardown tab closed`, `teardown tab skipped`,
-`teardown agent file line removed`, `teardown step failed`). Grep it by PR Key or kind. The
-consumer's ordinary progress goes to stdout.
+`teardown agent file line removed`, `teardown step failed`). Grep it by PR Key or kind. The PR Key field is
+always a PR Key, never a PR number: when the branch isn't known yet (a PR Comment on a repository
+missing from the repo config file, whose branch can't be looked up), it is `owner/repo:-`, and the
+PR number is in the detail. The consumer's ordinary progress goes to stdout.
 
 ## Known risks / open items
 
-- `herdr_runtime.py` isn't unit-tested, and the JSON it reads (`sbx-start` output,
+- `herdr_runtime.py` is unit-tested only for its error mapping (a command that times out or
+  can't run raises `AgentRuntimeError`, or `PromptTimeout` for a prompt; it is never read as a
+  missing pane). The JSON it reads (`sbx-start` output,
   `sbx list --json`, `herdr agent get`) is unverified until run by hand against the real tools.
 - Assumptions to check by hand: `herdr agent prompt` delivers to a busy agent; `sbx secret set
   github --sandbox` takes effect for a running sandbox; `sbx-start <branch>` run from a clone
   checks out that branch; herdr never reuses pane IDs.
-- Orphaned sandboxes (pane gone, sandbox still running) are only logged; stop them by hand.
+- Orphaned sandboxes (pane gone, or a new Coordinator that never became idle or never got its
+  secret) are only logged; stop them by hand.
 - A stuck Coordinator after a prompt timeout is not replaced or stopped.
 - Consumer AWS auth is a static IAM user access key in `.env`. Fine for a single Operator;
   rotate it periodically.

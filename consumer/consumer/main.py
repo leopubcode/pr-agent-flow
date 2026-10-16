@@ -24,12 +24,12 @@ def run(config: Config) -> None:
             sbx_start_command=config.sbx_start_command,
             prompt_timeout_seconds=config.prompt_timeout_seconds,
         ),
-        github_for=GithubClient,
+        github_with_token=GithubClient,
         repo_config=RepoConfig(config.repo_config_path),
         agent_file=AgentFile(config.agent_file_path),
         debug_log=DebugLog(config.debug_log_path),
         processed_ids=ProcessedIds(config.processed_ids_path, config.delivery_retention_days),
-        ready_timeout_seconds=config.session_ready_timeout_seconds,
+        ready_timeout_seconds=config.coordinator_ready_timeout_seconds,
         allowed_comment_authors=config.allowed_comment_authors,
     )
     logger.info("Accepting Feedback from: %s", ", ".join(sorted(config.allowed_comment_authors)))

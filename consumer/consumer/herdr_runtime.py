@@ -72,10 +72,7 @@ class HerdrSbxRuntime:
         )
 
     def prompt(self, pane_id: str, text: str) -> None:
-        try:
-            self._run(["herdr", "agent", "prompt", pane_id, text], timeout=self._prompt_timeout_seconds)
-        except subprocess.TimeoutExpired as exc:
-            raise PromptTimeout(f"herdr agent prompt {pane_id} timed out after {exc.timeout}s") from exc
+        self._run(["herdr", "agent", "prompt", pane_id, text], timeout=self._prompt_timeout_seconds, on_timeout=PromptTimeout)
 
     def stop_sandbox(self, sandbox_name: str) -> None:
         self._run(["sbx", "stop", sandbox_name])
@@ -95,15 +92,29 @@ class HerdrSbxRuntime:
         raise AgentRuntimeError(f"no sandbox named {wanted!r} in `sbx list --json` (have {names})")
 
     def _run(
-        self, args: list[str], cwd: Path | None = None, check: bool = True, timeout: float | None = None
+        self,
+        args: list[str],
+        cwd: Path | None = None,
+        check: bool = True,
+        timeout: float | None = None,
+        on_timeout: type[AgentRuntimeError] = AgentRuntimeError,
     ) -> subprocess.CompletedProcess:
+        """Run a command; any failure to run it, or a non-zero exit if `check`, raises `AgentRuntimeError`.
+
+        A timeout raises `on_timeout` (the prompt path passes `PromptTimeout`).
+        """
+        timeout = timeout or self._command_timeout_seconds
         try:
             proc = subprocess.run(
                 args, check=False, cwd=cwd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
-                timeout=timeout or self._command_timeout_seconds,
+                timeout=timeout,
             )
+        except subprocess.TimeoutExpired as exc:
+            raise on_timeout(f"{_redact(args)} timed out after {timeout}s") from exc
         except FileNotFoundError as exc:
             raise AgentRuntimeError(f"{args[0]} not found") from exc
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise AgentRuntimeError(f"{_redact(args)} could not run: {exc}") from exc
         if check and proc.returncode != 0:
             raise AgentRuntimeError(f"{_redact(args)} exited {proc.returncode}: {proc.stderr.strip()}")
         return proc
@@ -127,9 +138,11 @@ def _last_json_object(text: str) -> dict[str, Any]:
     return value
 
 
-def _redact(args: list[str]) -> str:
-    """Hide the token in `sbx secret set ... -t <token>` from error messages."""
+def _redact(args: list[str], limit: int = 120) -> str:
+    """The command for error messages: the token in `sbx secret set ... -t <token>` hidden,
+    and cut to `limit` characters (a prompt's text can be long)."""
     shown = list(args)
     if "-t" in shown and shown.index("-t") + 1 < len(shown):
         shown[shown.index("-t") + 1] = "***"
-    return " ".join(shown)
+    text = " ".join(shown)
+    return text if len(text) <= limit else text[: limit - 3] + "..."

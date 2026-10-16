@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from consumer.config import Config, parse_logins
 
 

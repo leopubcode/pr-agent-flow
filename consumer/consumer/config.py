@@ -24,7 +24,7 @@ class Config:
     sbx_start_command: list[str] | None
     poll_wait_seconds: int
     max_messages_per_poll: int
-    session_ready_timeout_seconds: int
+    coordinator_ready_timeout_seconds: int
     prompt_timeout_seconds: int
     delivery_retention_days: int
     allowed_comment_authors: frozenset[str]
@@ -51,7 +51,7 @@ class Config:
             sbx_start_command=shlex.split(sbx_start) if sbx_start else None,
             poll_wait_seconds=int(os.environ.get("POLL_WAIT_SECONDS", "20")),
             max_messages_per_poll=int(os.environ.get("MAX_MESSAGES_PER_POLL", "10")),
-            session_ready_timeout_seconds=int(os.environ.get("SESSION_READY_TIMEOUT_SECONDS", "120")),
+            coordinator_ready_timeout_seconds=int(os.environ.get("COORDINATOR_READY_TIMEOUT_SECONDS", "120")),
             prompt_timeout_seconds=int(os.environ.get("PROMPT_TIMEOUT_SECONDS", "30")),
             delivery_retention_days=int(os.environ.get("DELIVERY_RETENTION_DAYS", "7")),
             allowed_comment_authors=parse_logins(_required("ALLOWED_COMMENT_AUTHORS")),
