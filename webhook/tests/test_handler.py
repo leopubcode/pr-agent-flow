@@ -73,8 +73,36 @@ def test_normalize_pull_request_review_submitted():
     }
     msg = handler.normalize("pull_request_review", "submitted", payload, "delivery-2")
     assert msg["event_type"] == "pull_request_review"
+    assert msg["body"] == "lgtm with nits"
     assert msg["branch"] == "feature/x"
     assert msg["base_branch"] == "main"
+
+
+def _review_payload(review_body, state="commented"):
+    return {
+        "repository": {"full_name": "org/repo"},
+        "pull_request": {
+            "number": 7,
+            "head": {"ref": "feature/x"},
+            "base": {"ref": "main"},
+        },
+        "review": {"user": {"login": "reviewer"}, "body": review_body, "state": state, "html_url": "x"},
+    }
+
+
+def test_normalize_pull_request_review_with_empty_body_ignored():
+    payload = _review_payload("")
+    assert handler.normalize("pull_request_review", "submitted", payload, "delivery-2") is None
+
+
+def test_normalize_bodiless_approval_ignored():
+    payload = _review_payload(None, state="approved")
+    assert handler.normalize("pull_request_review", "submitted", payload, "delivery-2") is None
+
+
+def test_normalize_pull_request_review_with_whitespace_body_ignored():
+    payload = _review_payload("  \n\t ")
+    assert handler.normalize("pull_request_review", "submitted", payload, "delivery-2") is None
 
 
 def test_normalize_pull_request_review_comment_created():
