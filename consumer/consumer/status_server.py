@@ -66,7 +66,8 @@ def _agent_status(stdout: str) -> str | None:
 
 def render_page(rows: list[tuple[AgentRecord, HerdrResult]], agent_file: Path, refresh_seconds: int) -> str:
     cards = "\n".join(_render_card(record, result) for record, result in rows) or (
-        f'<p class="empty">No agents in <code>{html.escape(str(agent_file))}</code>.</p>'
+        '<p class="empty text-center text-lg font-bold text-white bg-black/60 border-4 border-dashed '
+        f'border-yellow-300 p-6 mt-8">No agents in <code>{html.escape(str(agent_file))}</code>.</p>'
     )
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"""<!doctype html>
@@ -76,38 +77,70 @@ def render_page(rows: list[tuple[AgentRecord, HerdrResult]], agent_file: Path, r
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="{refresh_seconds}">
 <title>Agent Status</title>
+<script src="https://cdn.tailwindcss.com"></script>
 <style>
-:root {{ --bg:#f7f7f8; --card:#fff; --fg:#1d1d1f; --muted:#6b6b70; --border:#e2e2e6; --code:#f1f1f3;
-        --ok:#1a7f37; --busy:#9a6700; --bad:#cf222e; }}
-@media (prefers-color-scheme: dark) {{
-  :root {{ --bg:#111113; --card:#1b1b1f; --fg:#ececf0; --muted:#9a9aa2; --border:#2c2c32; --code:#141417;
-          --ok:#3fb950; --busy:#d29922; --bad:#f85149; }}
-}}
-* {{ box-sizing:border-box; }}
-body {{ margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; }}
-main {{ max-width:960px; margin:0 auto; padding:24px 16px; }}
-header {{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }}
-h1 {{ font-size:20px; margin:0 0 4px; }}
-.meta {{ color:var(--muted); font-size:13px; }}
-.card {{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-top:16px; }}
-.card h2 {{ font-size:16px; margin:0; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }}
-dl {{ display:grid; grid-template-columns:max-content 1fr; gap:2px 12px; margin:10px 0; font-size:13px; }}
-dt {{ color:var(--muted); }} dd {{ margin:0; overflow-wrap:anywhere; }}
-pre {{ background:var(--code); border:1px solid var(--border); border-radius:6px; padding:10px;
-      margin:0; overflow-x:auto; font-size:12.5px; }}
-.badge {{ font-size:12px; font-weight:600; padding:1px 8px; border-radius:999px; border:1px solid currentColor; }}
-.idle {{ color:var(--ok); }} .working, .busy {{ color:var(--busy); }} .error, .gone {{ color:var(--bad); }}
-.unknown {{ color:var(--muted); }}
-.empty {{ color:var(--muted); margin-top:24px; }}
+  body {{
+    font-family: "Comic Sans MS", "Comic Sans", "Chalkboard SE", cursive, monospace;
+    background-color: #ff00ff;
+    background-image:
+      repeating-linear-gradient(45deg, #ff00ff 0px, #ff00ff 18px, #00ffff 18px, #00ffff 36px),
+      repeating-linear-gradient(-45deg, rgba(255,255,0,0.35) 0px, rgba(255,255,0,0.35) 18px,
+                                 rgba(0,255,0,0.35) 18px, rgba(0,255,0,0.35) 36px);
+  }}
+  .rainbow-text {{
+    background-image: linear-gradient(90deg, #ff0000, #ff9900, #ffee00, #33ff00, #00ffee, #0066ff, #cc00ff, #ff0000);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: rainbow-move 4s linear infinite;
+    text-shadow: 3px 3px 0 rgba(0,0,0,0.25);
+  }}
+  @keyframes rainbow-move {{ to {{ background-position: 200% center; }} }}
+  .blink {{ animation: blink 1.1s steps(2, start) infinite; }}
+  @keyframes blink {{ 50% {{ opacity: 0; }} }}
+  .bevel {{
+    border-style: solid;
+    border-width: 5px;
+    border-color: #ffffff #4b4b4b #4b4b4b #ffffff;
+    box-shadow: inset 2px 2px 0 rgba(255,255,255,.6), inset -2px -2px 0 rgba(0,0,0,.4), 5px 5px 0 #000;
+  }}
+  .marquee-bar {{ background: repeating-linear-gradient(90deg, #ffff00 0 20px, #000 20px 40px); color: #fff; }}
+  .badge {{ font-weight:900; padding:2px 10px; border:3px solid #000; text-transform:uppercase;
+           font-size:11px; letter-spacing:.5px; box-shadow:3px 3px 0 #000; }}
+  .idle {{ background:#39ff14; color:#000; }}
+  .working, .busy {{ background:#ffd400; color:#000; }}
+  .error, .gone {{ background:#ff1744; color:#fff; }}
+  .unknown {{ background:#d9d9d9; color:#000; }}
+  pre {{ font-family: "Courier New", monospace; }}
 </style>
 </head>
-<body>
-<main>
-<header>
-  <div><h1>Agent Status</h1><div class="meta">{len(rows)} agent(s) from <code>{html.escape(str(agent_file))}</code></div></div>
-  <div class="meta">Updated {now} · refreshes every {refresh_seconds}s</div>
-</header>
+<body class="min-h-screen px-4 py-6">
+<marquee behavior="alternate" scrollamount="6"
+         class="marquee-bar font-bold text-lg py-2 border-4 border-black mb-4">
+  🚧🌟 WELCOME TO THE AGENT STATUS SUPERHIGHWAY 🌟🚧 — Best viewed in Netscape Navigator at 800x600
+  — Sign the guestbook! 🚧
+</marquee>
+<main class="max-w-3xl mx-auto">
+  <div class="bevel bg-gradient-to-br from-fuchsia-600 via-cyan-400 to-yellow-300 p-5 mb-6">
+    <header class="flex justify-between items-baseline gap-3 flex-wrap">
+      <div>
+        <h1 class="rainbow-text text-4xl font-black tracking-tight">&#9733; Agent Status &#9733;</h1>
+        <div class="text-sm font-bold text-white" style="text-shadow:1px 1px 0 #000">
+          {len(rows)} agent(s) from <code class="bg-black text-lime-300 px-1">{html.escape(str(agent_file))}</code>
+        </div>
+      </div>
+      <div class="text-sm font-bold text-white blink" style="text-shadow:1px 1px 0 #000">
+        Updated {now} &middot; refreshes every {refresh_seconds}s
+      </div>
+    </header>
+    <div class="mt-3 inline-block bg-yellow-300 border-4 border-black px-3 py-1 font-black text-black blink">
+      &#9888; UNDER CONSTRUCTION &#9888;
+    </div>
+  </div>
+  <div class="space-y-5">
 {cards}
+  </div>
 </main>
 </body>
 </html>
@@ -123,14 +156,17 @@ def _render_card(record: AgentRecord, result: HerdrResult) -> str:
         label = result.status or "unknown"
         css = label.lower() if label.lower() in {"idle", "working", "busy"} else "unknown"
     e = html.escape
-    return f"""<section class="card">
-  <h2>{e(record.pr_key)} <span class="badge {css}">{e(label)}</span></h2>
-  <dl>
-    <dt>Pane</dt><dd><code>{e(record.pane_id)}</code></dd>
-    <dt>Tab</dt><dd>{e(record.tab_label)}</dd>
-    <dt>Sandbox</dt><dd>{e(record.sandbox_name)}</dd>
+    return f"""<section class="card bevel bg-white p-4">
+  <h2 class="text-lg font-black flex items-center gap-2 flex-wrap">
+    <span class="text-fuchsia-700">{e(record.pr_key)}</span>
+    <span class="badge {css}">{e(label)}</span>
+  </h2>
+  <dl class="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 my-3 text-sm">
+    <dt class="font-bold text-cyan-700">Pane</dt><dd><code class="bg-gray-100 px-1">{e(record.pane_id)}</code></dd>
+    <dt class="font-bold text-cyan-700">Tab</dt><dd class="break-words">{e(record.tab_label)}</dd>
+    <dt class="font-bold text-cyan-700">Sandbox</dt><dd class="break-words">{e(record.sandbox_name)}</dd>
   </dl>
-  <pre>$ herdr agent get {e(record.pane_id)}
+  <pre class="bg-black text-lime-300 border-2 border-black p-3 overflow-x-auto text-xs">$ herdr agent get {e(record.pane_id)}
 {e(result.output) or "(no output)"}</pre>
 </section>"""
 
