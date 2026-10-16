@@ -10,8 +10,8 @@ from .agent_file import AgentFile, AgentRecord
 from .agent_runtime import IDLE, AgentRuntime, AgentRuntimeError
 from .debug_log import MISSING_REPO_CONFIG, DebugLog
 from .github_client import GithubClient
+from .processed_ids import ProcessedIds
 from .repo_config import RepoConfig, RepoEntry
-from .state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
@@ -23,31 +23,31 @@ class CoordinatorNotReadyError(AgentRuntimeError):
 class Dispatcher:
     def __init__(
         self,
-        state: StateStore,
         runtime: AgentRuntime,
         github_for: Callable[[str], GithubClient],
         repo_config: RepoConfig,
         agent_file: AgentFile,
         debug_log: DebugLog,
+        processed_ids: ProcessedIds,
         ready_timeout_seconds: float,
         allowed_comment_authors: frozenset[str],
         ready_poll_interval_seconds: float = 2.0,
     ):
         if not allowed_comment_authors:
             raise ValueError("allowed_comment_authors must not be empty")
-        self._state = state
         self._runtime = runtime
         self._github_for = github_for
         self._repo_config = repo_config
         self._agent_file = agent_file
         self._debug_log = debug_log
+        self._processed_ids = processed_ids
         self._ready_timeout_seconds = ready_timeout_seconds
         self._ready_poll_interval_seconds = ready_poll_interval_seconds
         self._allowed_comment_authors = allowed_comment_authors
 
     def handle_message(self, msg: dict[str, Any]) -> None:
         delivery_id = msg["delivery_id"]
-        if self._state.is_duplicate(delivery_id):
+        if self._processed_ids.contains(delivery_id):
             logger.info("Skipping already-processed delivery %s", delivery_id)
             return
 
@@ -66,7 +66,7 @@ class Dispatcher:
         else:
             self._deliver_feedback(msg)
 
-        self._state.mark_processed(delivery_id)
+        self._processed_ids.record(delivery_id)
 
     def _deliver_feedback(self, msg: dict[str, Any]) -> None:
         repo_full_name = msg["repo_full_name"]

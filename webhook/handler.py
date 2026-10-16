@@ -81,6 +81,11 @@ def normalize(gh_event: str, action: str | None, payload: dict[str, Any], delive
     if gh_event == "pull_request_review" and action == "submitted":
         repo = payload["repository"]
         review = payload["review"]
+        body = review.get("body") or ""
+        if not body.strip():
+            # A Review is only Feedback when it has text; its Review Comments
+            # arrive as their own messages.
+            return None
         return {
             **base,
             "event_type": "pull_request_review",
@@ -90,7 +95,7 @@ def normalize(gh_event: str, action: str | None, payload: dict[str, Any], delive
             "base_branch": _pr_ref(payload, "base"),
             "is_merged": False,
             "actor": review["user"]["login"],
-            "body": review.get("body") or "",
+            "body": body,
             "html_url": review["html_url"],
             "file_path": None,
             "line": None,

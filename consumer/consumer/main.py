@@ -11,17 +11,15 @@ from .debug_log import DebugLog
 from .dispatcher import Dispatcher
 from .github_client import GithubClient
 from .herdr_runtime import HerdrSbxRuntime
+from .processed_ids import ProcessedIds
 from .repo_config import RepoConfig
-from .state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
 
 def run(config: Config) -> None:
     sqs = boto3.client("sqs", region_name=config.aws_region)
-    state = StateStore(config.state_db_path)
     dispatcher = Dispatcher(
-        state=state,
         runtime=HerdrSbxRuntime(
             sbx_start_command=config.sbx_start_command,
             prompt_timeout_seconds=config.prompt_timeout_seconds,
@@ -30,6 +28,7 @@ def run(config: Config) -> None:
         repo_config=RepoConfig(config.repo_config_path),
         agent_file=AgentFile(config.agent_file_path),
         debug_log=DebugLog(config.debug_log_path),
+        processed_ids=ProcessedIds(config.processed_ids_path, config.delivery_retention_days),
         ready_timeout_seconds=config.session_ready_timeout_seconds,
         allowed_comment_authors=config.allowed_comment_authors,
     )
@@ -53,8 +52,6 @@ def run(config: Config) -> None:
                 logger.exception("Failed to process message %s; leaving it for redelivery", raw.get("MessageId"))
                 continue
             sqs.delete_message(QueueUrl=config.sqs_queue_url, ReceiptHandle=raw["ReceiptHandle"])
-
-        state.prune(config.delivery_retention_days)
 
 
 def main() -> None:

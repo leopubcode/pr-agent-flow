@@ -1,15 +1,19 @@
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from consumer.agent_file import AgentFile
+from consumer.agent_runtime import AgentRuntimeError
 from consumer.debug_log import DebugLog
 from consumer.dispatcher import Dispatcher
 from consumer.github_client import PullRequestInfo
+from consumer.processed_ids import ProcessedIds
 from consumer.repo_config import RepoConfig
-from consumer.state_store import StateStore
 
 from .fake_agent_runtime import FakeAgentRuntime
+
+RETENTION_DAYS = 7
 
 
 class FakeGithub:
@@ -35,7 +39,7 @@ class FakeGithub:
 
 
 class Env:
-    def __init__(self, tmp_path: Path):
+    def __init__(self, tmp_path: Path, ready_timeout_seconds: float = 5):
         self.tmp = tmp_path
         self.runtime = FakeAgentRuntime()
         self.github = FakeGithub()
@@ -49,15 +53,15 @@ class Env:
             f"org/repo\t{self.clone}\ttok-repo\n"
             f"org/other {self.other_clone} tok-other\n"
         )
-        self.state = StateStore(tmp_path / "state.db")
+        self.processed_ids_path = tmp_path / "processed-ids"
         self.dispatcher = Dispatcher(
-            state=self.state,
             runtime=self.runtime,
             github_for=self.github,
             repo_config=RepoConfig(self.repo_config_path),
             agent_file=AgentFile(self.agent_file_path),
             debug_log=DebugLog(self.debug_log_path),
-            ready_timeout_seconds=5,
+            processed_ids=ProcessedIds(self.processed_ids_path, retention_days=RETENTION_DAYS),
+            ready_timeout_seconds=ready_timeout_seconds,
             ready_poll_interval_seconds=0,
             allowed_comment_authors=frozenset({"octocat"}),
         )
@@ -73,11 +77,15 @@ class Env:
         return self.debug_log_path.read_text().splitlines()
 
 
+    def processed_ids(self) -> list[str]:
+        if not self.processed_ids_path.exists():
+            return []
+        return [line.split()[0] for line in self.processed_ids_path.read_text().splitlines()]
+
+
 @pytest.fixture
 def env(tmp_path: Path):
-    e = Env(tmp_path)
-    yield e
-    e.state.close()
+    return Env(tmp_path)
 
 
 def make_comment(delivery_id="d1", branch="feature/x", repo="org/repo", body="please fix this", **overrides):
@@ -211,8 +219,60 @@ def test_duplicate_delivery_is_delivered_once(env):
 def test_empty_allowlist_is_rejected(tmp_path):
     with pytest.raises(ValueError):
         Dispatcher(
-            state=StateStore(tmp_path / "s.db"), runtime=FakeAgentRuntime(), github_for=FakeGithub(),
+            processed_ids=ProcessedIds(tmp_path / "p", RETENTION_DAYS), runtime=FakeAgentRuntime(), github_for=FakeGithub(),
             repo_config=RepoConfig(tmp_path / "r"), agent_file=AgentFile(tmp_path / "a"),
             debug_log=DebugLog(tmp_path / "d"), ready_timeout_seconds=5,
             allowed_comment_authors=frozenset(),
         )
+
+
+def test_feedback_from_non_reviewer_is_still_recorded_as_processed(env):
+    env.dispatcher.handle_message(make_comment(delivery_id="d1", actor="stranger"))
+
+    assert env.processed_ids() == ["d1"]
+
+
+def test_delivery_already_in_processed_ids_file_is_skipped(env):
+    recent = datetime.now(UTC) - timedelta(hours=1)
+    env.processed_ids_path.write_text(f"seen-1 {recent.isoformat()}\n")
+
+    env.dispatcher.handle_message(make_comment(delivery_id="seen-1", branch=None))
+
+    assert env.runtime.calls == []
+    assert env.github.lookups == []
+
+
+def test_handled_delivery_is_recorded_with_timestamp(env):
+    before = datetime.now(UTC)
+
+    env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+
+    [line] = env.processed_ids_path.read_text().splitlines()
+    delivery_id, stamp = line.split()
+    assert delivery_id == "d1"
+    assert before <= datetime.fromisoformat(stamp) <= datetime.now(UTC)
+
+
+def test_entries_older_than_retention_are_pruned(env):
+    now = datetime.now(UTC)
+    stale = now - timedelta(days=RETENTION_DAYS, hours=1)
+    fresh = now - timedelta(days=RETENTION_DAYS - 1)
+    env.processed_ids_path.write_text(f"old-1 {stale.isoformat()}\nkept-1 {fresh.isoformat()}\n")
+
+    env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+    assert env.processed_ids() == ["kept-1", "d1"]
+
+    env.dispatcher.handle_message(make_comment(delivery_id="old-1", body="handled again"))
+    assert "handled again" in env.runtime.prompts["pane-1"][-1]
+
+
+def test_message_that_raises_is_not_recorded_and_is_handled_again_on_redelivery(tmp_path):
+    env = Env(tmp_path, ready_timeout_seconds=0)
+    env.runtime.starting_statuses = ("starting",)  # not idle by the (zero) deadline
+    with pytest.raises(AgentRuntimeError):
+        env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+    assert env.processed_ids() == []
+
+    env.runtime.starting_statuses = ()
+    env.dispatcher.handle_message(make_comment(delivery_id="d1"))
+    assert env.processed_ids() == ["d1"]

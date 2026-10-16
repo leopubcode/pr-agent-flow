@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 class Config:
     aws_region: str
     sqs_queue_url: str
-    state_db_path: Path
+    processed_ids_path: Path
     repo_config_path: Path
     agent_file_path: Path
     debug_log_path: Path
@@ -44,7 +44,7 @@ class Config:
         return cls(
             aws_region=os.environ.get("AWS_REGION", "us-east-1"),
             sqs_queue_url=_required("SQS_QUEUE_URL"),
-            state_db_path=_path("STATE_DB_PATH", Path("~/.pr-agent-flow/state.db")),
+            processed_ids_path=_path("PROCESSED_IDS_PATH", Path("~/.pr-agent-flow/processed-ids")),
             repo_config_path=_path("REPO_CONFIG_PATH", PROJECT_ROOT / "repos.txt"),
             agent_file_path=_path("AGENT_FILE_PATH", PROJECT_ROOT / "agents.tsv"),
             debug_log_path=_path("DEBUG_LOG_PATH", PROJECT_ROOT / "debug.log"),
