@@ -1,14 +1,14 @@
 import hashlib
 import hmac
 import json
-import os
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import handler  # noqa: E402
-
+import handler
 
 SECRET = "test-secret"
 
@@ -73,8 +73,36 @@ def test_normalize_pull_request_review_submitted():
     }
     msg = handler.normalize("pull_request_review", "submitted", payload, "delivery-2")
     assert msg["event_type"] == "pull_request_review"
+    assert msg["body"] == "lgtm with nits"
     assert msg["branch"] == "feature/x"
     assert msg["base_branch"] == "main"
+
+
+def _review_payload(review_body, state="commented"):
+    return {
+        "repository": {"full_name": "org/repo"},
+        "pull_request": {
+            "number": 7,
+            "head": {"ref": "feature/x"},
+            "base": {"ref": "main"},
+        },
+        "review": {"user": {"login": "reviewer"}, "body": review_body, "state": state, "html_url": "x"},
+    }
+
+
+def test_normalize_pull_request_review_with_empty_body_ignored():
+    payload = _review_payload("")
+    assert handler.normalize("pull_request_review", "submitted", payload, "delivery-2") is None
+
+
+def test_normalize_bodiless_approval_ignored():
+    payload = _review_payload(None, state="approved")
+    assert handler.normalize("pull_request_review", "submitted", payload, "delivery-2") is None
+
+
+def test_normalize_pull_request_review_with_whitespace_body_ignored():
+    payload = _review_payload("  \n\t ")
+    assert handler.normalize("pull_request_review", "submitted", payload, "delivery-2") is None
 
 
 def test_normalize_pull_request_review_comment_created():
@@ -114,6 +142,46 @@ def test_normalize_pull_request_closed_merged():
     msg = handler.normalize("pull_request", "closed", payload, "delivery-4")
     assert msg["event_type"] == "pull_request"
     assert msg["is_merged"] is True
+
+
+def _with_repos(payload, head_repo):
+    pr = payload["pull_request"]
+    pr["head"]["repo"] = head_repo and {"full_name": head_repo}
+    pr["base"]["repo"] = {"full_name": "org/repo"}
+    return payload
+
+
+def _review_comment_payload():
+    return {
+        "repository": {"full_name": "org/repo"},
+        "pull_request": {"number": 7, "head": {"ref": "feature/x"}, "base": {"ref": "main"}},
+        "comment": {"user": {"login": "reviewer"}, "body": "fix", "html_url": "x"},
+    }
+
+
+@pytest.mark.parametrize(
+    ("head_repo", "is_fork"),
+    [("org/repo", False), ("someone/repo", True), (None, True)],  # None: the fork was deleted
+)
+@pytest.mark.parametrize(
+    ("gh_event", "action", "make_payload"),
+    [
+        ("pull_request_review", "submitted", lambda: _review_payload("nits")),
+        ("pull_request_review_comment", "created", _review_comment_payload),
+    ],
+)
+def test_normalize_marks_feedback_on_fork_prs(gh_event, action, make_payload, head_repo, is_fork):
+    msg = handler.normalize(gh_event, action, _with_repos(make_payload(), head_repo), "d")
+    assert msg["is_fork"] is is_fork
+
+
+def test_normalize_issue_comment_leaves_fork_status_to_the_consumer():
+    payload = {
+        "repository": {"full_name": "org/repo"},
+        "issue": {"number": 42, "pull_request": {"url": "x"}},
+        "comment": {"user": {"login": "octocat"}, "body": "hi", "html_url": "x"},
+    }
+    assert handler.normalize("issue_comment", "created", payload, "d")["is_fork"] is None
 
 
 def test_normalize_irrelevant_event_ignored():

@@ -1,3 +1,16 @@
-this project implements a Pull Request listener. It reads messages from an SQS queue. When it finds a github PR message related to new comment or new review in a pull request it launches a claude code sandbox using docker sandboxes via `sbx run claude --branch BRANCH_NAME`. The branch name is the same as the PR branch. For now let's only support a single agent per PR. The agent is started via libtmux by keeping track of the session by using the branch name. Each comment uses a subagent by instructor the orchestrator agent to use one. When all comments are addressed it pushes the commits to the branch. The session is kept alive as long as the PR remains open.
+# PR Agent Flow
 
-See [`docs/architecture.md`](docs/architecture.md) for the full design, repo layout, and runbook.
+Listens for review activity on GitHub pull requests and hands it to a long-lived coding agent
+working on that pull request's branch.
+
+A GitHub webhook sends PR Comments, Reviews, Review Comments and PR-close events through a Lambda
+to an SQS queue. The consumer, running on the Operator's machine, reads the queue one message at
+a time. For Feedback from an allowlisted Reviewer on a same-repo pull request (pull requests from
+forks are ignored), it prompts that pull request's Coordinator through herdr, first starting one
+with `sbx-start <branch>` from the Operator's local clone if none is running. Each sandbox gets
+only its own repository's token. The Coordinator hands each piece of Feedback to one Implementer
+at a time and pushes after each. When the pull request closes, the consumer stops the sandbox,
+closes the herdr tab and forgets the Coordinator.
+
+See [`docs/architecture.md`](docs/architecture.md) for the design and runbook,
+[`GLOSSARY.md`](GLOSSARY.md) for the vocabulary, and [`docs/adr/`](docs/adr/) for the decisions.

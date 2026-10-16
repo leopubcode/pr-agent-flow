@@ -1,0 +1,10 @@
+{
+  "leopubcode/pr-agent-flow": {
+    "clone_path": "~/dev/pr-agent-flow",
+    "token": "github_pat_REPLACE_ME"
+  },
+  "leopubcode/another-repo": {
+    "clone_path": "~/dev/another-repo",
+    "token": "github_pat_REPLACE_ME"
+  }
+}

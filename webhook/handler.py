@@ -13,7 +13,7 @@ import hashlib
 import hmac
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -47,9 +47,18 @@ def _pr_ref(payload: dict[str, Any], key: str) -> str | None:
     return pr.get(key, {}).get("ref")
 
 
+def _is_fork(payload: dict[str, Any]) -> bool | None:
+    """Whether the PR's head branch lives outside its base repository; None if the payload can't tell."""
+    pr = payload["pull_request"]
+    if "repo" not in pr["head"] or "repo" not in pr["base"]:
+        return None
+    head_repo = pr["head"]["repo"]  # null once the fork is deleted
+    return head_repo is None or head_repo["full_name"] != pr["base"]["repo"]["full_name"]
+
+
 def normalize(gh_event: str, action: str | None, payload: dict[str, Any], delivery_id: str) -> dict[str, Any] | None:
     """Return a normalized message dict, or None if this event should be ignored."""
-    received_at = datetime.now(timezone.utc).isoformat()
+    received_at = datetime.now(UTC).isoformat()
 
     base = {
         "schema_version": SCHEMA_VERSION,
@@ -70,6 +79,7 @@ def normalize(gh_event: str, action: str | None, payload: dict[str, Any], delive
             "branch": None,
             "base_branch": None,
             "is_merged": False,
+            "is_fork": None,
             "actor": comment["user"]["login"],
             "body": comment["body"],
             "html_url": comment["html_url"],
@@ -81,6 +91,11 @@ def normalize(gh_event: str, action: str | None, payload: dict[str, Any], delive
     if gh_event == "pull_request_review" and action == "submitted":
         repo = payload["repository"]
         review = payload["review"]
+        body = review.get("body") or ""
+        if not body.strip():
+            # A Review is only Feedback when it has text; its Review Comments
+            # arrive as their own messages.
+            return None
         return {
             **base,
             "event_type": "pull_request_review",
@@ -89,8 +104,9 @@ def normalize(gh_event: str, action: str | None, payload: dict[str, Any], delive
             "branch": _pr_ref(payload, "head"),
             "base_branch": _pr_ref(payload, "base"),
             "is_merged": False,
+            "is_fork": _is_fork(payload),
             "actor": review["user"]["login"],
-            "body": review.get("body") or "",
+            "body": body,
             "html_url": review["html_url"],
             "file_path": None,
             "line": None,
@@ -108,6 +124,7 @@ def normalize(gh_event: str, action: str | None, payload: dict[str, Any], delive
             "branch": _pr_ref(payload, "head"),
             "base_branch": _pr_ref(payload, "base"),
             "is_merged": False,
+            "is_fork": _is_fork(payload),
             "actor": comment["user"]["login"],
             "body": comment["body"],
             "html_url": comment["html_url"],
