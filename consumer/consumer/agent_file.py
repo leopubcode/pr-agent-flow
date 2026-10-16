@@ -23,6 +23,9 @@ class AgentFile:
     def __init__(self, path: Path):
         self._path = Path(path)
 
+    def all(self) -> list[AgentRecord]:
+        return self._read()
+
     def get(self, pr_key: str) -> AgentRecord | None:
         for record in self._read():
             if record.pr_key == pr_key:

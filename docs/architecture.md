@@ -241,6 +241,10 @@ The consumer runs on the Operator's machine, which needs:
 
 - Leave a PR Comment on an open, same-repo pull request. A new herdr tab appears for its
   Coordinator; watch it work there. `~/.pr-agent-flow/agents.tsv` gains a line for the PR Key.
+- `pr-agent-status` (or `make status`) serves a page at http://127.0.0.1:8787/ with one card per
+  `agents.tsv` line showing the output of `herdr agent get <pane>`; it refreshes every 5s.
+  `--host`, `--port` and `--refresh` change the defaults. Read-only; needs only
+  `PR_AGENT_FLOW_HOME`.
 - `tail -f ~/.pr-agent-flow/debug.log` to see unusual events: missing panes, orphaned sandboxes, timeouts, fork
   PRs, missing repo config, and teardown.
 - Messages that keep failing end up in the DLQ; inspect them with

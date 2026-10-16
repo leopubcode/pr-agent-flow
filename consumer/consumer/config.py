@@ -35,12 +35,7 @@ class Config:
                 raise RuntimeError(f"Missing required environment variable: {name}")
             return value
 
-        home = Path(os.environ.get("PR_AGENT_FLOW_HOME") or DEFAULT_HOME).expanduser()
-        if not home.is_dir():
-            raise RuntimeError(
-                f"PR_AGENT_FLOW_HOME directory {home} does not exist. Create it from the template: "
-                f"cp -r examples/pr-agent-flow-home {home} (see docs/architecture.md)"
-            )
+        home = home_from_env()
         sbx_start = os.environ.get("SBX_START_COMMAND")
         return cls(
             aws_region=os.environ.get("AWS_REGION", "us-east-1"),
@@ -61,7 +56,7 @@ class Config:
 
     @property
     def agent_file_path(self) -> Path:
-        return self.home / "agents.tsv"
+        return agent_file_path(self.home)
 
     @property
     def processed_ids_path(self) -> Path:
@@ -76,6 +71,21 @@ class Config:
         return self.home / "consumer.log"
 
 
+def home_from_env() -> Path:
+    """`PR_AGENT_FLOW_HOME`, or the default; raises if the directory doesn't exist."""
+    home = Path(os.environ.get("PR_AGENT_FLOW_HOME") or DEFAULT_HOME).expanduser()
+    if not home.is_dir():
+        raise RuntimeError(
+            f"PR_AGENT_FLOW_HOME directory {home} does not exist. Create it from the template: "
+            f"cp -r examples/pr-agent-flow-home {home} (see docs/architecture.md)"
+        )
+    return home
+
+
 def parse_logins(value: str) -> frozenset[str]:
     """Comma-separated GitHub logins, lowercased (GitHub logins are case-insensitive)."""
     return frozenset(login.strip().lower() for login in value.split(",") if login.strip())
+
+
+def agent_file_path(home: Path) -> Path:
+    return home / "agents.tsv"
