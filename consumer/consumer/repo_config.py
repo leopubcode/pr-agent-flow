@@ -1,4 +1,4 @@
-"""The repo config file: Operator-maintained and gitignored (see ADR 0002).
+"""The repo config file: `repos.json` in PR_AGENT_FLOW_HOME, Operator-maintained (see ADR 0002).
 
 A JSON object keyed by `owner/repo`, one entry per watched repository:
 

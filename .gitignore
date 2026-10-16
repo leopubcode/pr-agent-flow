@@ -17,11 +17,5 @@ infra/.build/
 .pytest_cache/
 .ruff_cache/
 
-# Consumer local state (Operator-owned; repos.json holds tokens)
-/repos.json
-/agents.tsv
-/agents.tsv.tmp
-/debug.log
-
 # Claude Code agent worktrees
 .claude/worktrees/

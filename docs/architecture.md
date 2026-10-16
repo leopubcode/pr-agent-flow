@@ -121,20 +121,34 @@ for now.
 
 ## Local files
 
-All are plain text and gitignored. Paths default to the project checkout and can be overridden
-in `consumer/.env` (see `.env.example`).
+Every file the consumer reads or writes lives in one directory outside the project checkout:
+`PR_AGENT_FLOW_HOME`, default `~/.pr-agent-flow` (set it in `consumer/.env`). The consumer never
+creates this directory: if it's missing, the consumer stops at startup and points at the
+template in `examples/pr-agent-flow-home/` (see Setup). Inside it, the consumer creates each of
+its own files the first time it writes one. Keeping the directory out of the checkout means a
+Coordinator whose sandbox starts from this repository's own clone can't read other
+repositories' tokens (ADR 0002).
 
-| File | Default | Setting | Owner |
-| --- | --- | --- | --- |
-| Repo config file | `./repos.json` | `REPO_CONFIG_PATH` | Operator |
-| Agent file | `./agents.tsv` | `AGENT_FILE_PATH` | consumer (Operator may edit) |
-| Debug log | `./debug.log` | `DEBUG_LOG_PATH` | consumer |
-| Processed-IDs file | `~/.pr-agent-flow/processed-ids` | `PROCESSED_IDS_PATH` | consumer |
+| File | Written by | Holds |
+| --- | --- | --- |
+| `repos.json` | Operator | the repo config file: clone path and token per repository |
+| `agents.tsv` | consumer (Operator may edit) | the agent file: one line per Coordinator |
+| `processed-ids` | consumer | delivery IDs already handled |
+| `debug.log` | consumer | the debug log |
+| `consumer.log` | consumer | the consumer's own progress, also printed to stderr |
+
+### Log rotation
+
+`debug.log` and `consumer.log` are rotated at local midnight: each is written under its plain
+name, and when the day changes it is renamed to `<name>.YYYY-MM-DD` (for example
+`debug.log.2026-10-16`) and a new file is started. If the consumer was stopped over midnight, the
+file is renamed to the day it was last written on the first write after restart. Rotated files are
+kept forever; delete old ones by hand if you want.
 
 ### Repo config file
 
 The Operator lists each watched repository once, as a JSON object keyed by `owner/repo` (see
-`repos.example.json`):
+`examples/pr-agent-flow-home/repos.json`):
 
 ```json
 {
@@ -155,7 +169,7 @@ scoped to that repository only (contents read/write and pull requests read is en
 Agent Account to read the PR and push). It's given to the repository's sandboxes with
 `sbx secret set github --sandbox <name>` and used for the consumer's own GitHub lookups, so there
 is no global token. The file is re-read on every lookup, so it can be edited while the consumer
-runs. Because it holds tokens, keep it out of git (it is gitignored) and readable only by you.
+runs. Because it holds tokens, keep it readable only by you (`chmod 600`).
 
 ### Debug log
 
@@ -166,7 +180,7 @@ kind, detail. Event kinds: `missing repo config`, `fork PR ignored`, `pane missi
 `teardown agent file line removed`, `teardown step failed`). Grep it by PR Key or kind. The PR Key field is
 always a PR Key, never a PR number: when the branch isn't known yet (a PR Comment on a repository
 missing from the repo config file, whose branch can't be looked up), it is `owner/repo:-`, and the
-PR number is in the detail. The consumer's ordinary progress goes to stdout.
+PR number is in the detail. The consumer's ordinary progress goes to `consumer.log` instead.
 
 ## Known risks / open items
 
@@ -211,16 +225,23 @@ The consumer runs on the Operator's machine, which needs:
    the sensitive ones).
 4. Copy `.env.example` to `consumer/.env` and fill in the AWS credentials, `SQS_QUEUE_URL` and
    `ALLOWED_COMMENT_AUTHORS` (the Reviewers).
-5. Copy `repos.example.json` to `repos.json` in the project checkout (`chmod 600` it) and add
-   one entry per repo in `github_repositories`, keyed by `owner/repo`, with its `clone_path` and
-   fine-grained `token`.
+5. Create `PR_AGENT_FLOW_HOME` from the template and lock it down:
+
+   ```bash
+   cp -r examples/pr-agent-flow-home ~/.pr-agent-flow
+   chmod 700 ~/.pr-agent-flow && chmod 600 ~/.pr-agent-flow/repos.json
+   ```
+
+   Then edit `~/.pr-agent-flow/repos.json`: one entry per repo in `github_repositories`, keyed
+   by `owner/repo`, with its `clone_path` and fine-grained `token`. To use another directory,
+   copy the template there and set `PR_AGENT_FLOW_HOME` in `consumer/.env`.
 6. `pip install -e consumer/` then `pr-agent-consumer` (or `python -m consumer.main`).
 
 ### Operating
 
 - Leave a PR Comment on an open, same-repo pull request. A new herdr tab appears for its
-  Coordinator; watch it work there. `agents.tsv` gains a line for the PR Key.
-- `tail -f debug.log` to see unusual events: missing panes, orphaned sandboxes, timeouts, fork
+  Coordinator; watch it work there. `~/.pr-agent-flow/agents.tsv` gains a line for the PR Key.
+- `tail -f ~/.pr-agent-flow/debug.log` to see unusual events: missing panes, orphaned sandboxes, timeouts, fork
   PRs, missing repo config, and teardown.
 - Messages that keep failing end up in the DLQ; inspect them with
   `aws sqs receive-message --queue-url <dlq-url>`.
