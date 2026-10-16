@@ -56,7 +56,8 @@ class HerdrSbxRuntime:
         return StartedCoordinator(pane_id=pane_id, tab_label=tab_label, sandbox_name=self._sandbox_named(tab_label))
 
     def set_secret(self, sandbox_name: str, token: str) -> None:
-        self._run(["sbx", "secret", "set", "github", "--sandbox", sandbox_name, "-t", token])
+        # -f: the sandbox may already hold a github secret, and this repo's token must win.
+        self._run(["sbx", "secret", "set", "-f", "github", "--sandbox", sandbox_name, "-t", token])
 
     def get_agent_info(self, pane_id: str) -> AgentInfo:
         proc = self._run(["herdr", "agent", "get", pane_id], check=False)

@@ -27,7 +27,7 @@ GitHub PR Comment / Review / Review Comment / PR closed
   look up PR Key in the agent file                                             sbx stop <sandbox>,
   pane alive?  yes -> herdr agent prompt <pane> <Feedback>                     herdr tab close <tab_id>,
                no  -> sbx-start from the repo's clone,                         remove agent file line
-                      sbx secret set github --sandbox <name>,
+                      sbx secret set -f github --sandbox <name>,
                       wait for `idle`, record in agent file,
                       startup prompt (check out the branch), then the Feedback
 ```

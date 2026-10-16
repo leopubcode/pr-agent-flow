@@ -116,3 +116,11 @@ def test_unparseable_sbx_list_output_raises_agent_runtime_error(monkeypatch):
 
     with pytest.raises(AgentRuntimeError, match="Update available"):
         runtime()._sandbox_named(LABEL)
+
+
+def test_secret_set_overwrites_an_existing_secret(monkeypatch):
+    calls = run_returns(monkeypatch, "")
+
+    runtime().set_secret("sbx-1", "tok")
+
+    assert calls == [["sbx", "secret", "set", "-f", "github", "--sandbox", "sbx-1", "-t", "tok"]]

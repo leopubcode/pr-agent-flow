@@ -42,7 +42,7 @@ class AgentRuntime(Protocol):
         """Run `sbx-start` from `clone_dir`; the Coordinator checks out the branch itself."""
 
     def set_secret(self, sandbox_name: str, token: str) -> None:
-        """`sbx secret set github --sandbox <name> -t <token>`."""
+        """`sbx secret set -f github --sandbox <name> -t <token>` (overwrites an existing secret)."""
 
     def get_agent_info(self, pane_id: str) -> AgentInfo:
         """`herdr agent get <pane>`; `GONE` when the pane doesn't exist."""
