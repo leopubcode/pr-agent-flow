@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 MISSING_REPO_CONFIG = "missing repo config"
+PANE_MISSING = "pane missing"
+SANDBOX_ORPHANED = "sandbox orphaned"
 
 
 class DebugLog:
