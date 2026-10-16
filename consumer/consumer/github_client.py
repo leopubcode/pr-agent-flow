@@ -20,6 +20,7 @@ class GithubClient:
     """
 
     def __init__(self, token: str):
+        """`token` is the repository's own fine-grained token from the repo config file."""
         self._gh = Github(token)
 
     def resolve_pull_request(self, repo_full_name: str, pr_number: int) -> PullRequestInfo:
