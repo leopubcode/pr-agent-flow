@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 MISSING_REPO_CONFIG = "missing repo config"
+FORK_PR_IGNORED = "fork PR ignored"
 
 
 class DebugLog:

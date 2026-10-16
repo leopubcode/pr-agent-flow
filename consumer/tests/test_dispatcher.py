@@ -22,6 +22,7 @@ class FakeGithub:
     def __init__(self):
         self.branches: dict[tuple[str, int], str] = {("org/repo", 1): "feature/x"}
         self.lookups: list[tuple[str, int, str]] = []
+        self.forks: set[tuple[str, int]] = set()
 
     def __call__(self, token: str):
         fake = self
@@ -33,6 +34,7 @@ class FakeGithub:
                     branch=fake.branches[(repo_full_name, pr_number)],
                     base_branch="main",
                     clone_url=f"https://github.com/{repo_full_name}.git",
+                    is_fork=(repo_full_name, pr_number) in fake.forks,
                 )
 
         return _Client()
@@ -98,6 +100,7 @@ def make_comment(delivery_id="d1", branch="feature/x", repo="org/repo", body="pl
         "branch": branch,
         "base_branch": "main",
         "is_merged": False,
+        "is_fork": False,
         "actor": "octocat",
         "body": body,
         "html_url": f"https://github.com/{repo}/pull/1#discussion_r1",
@@ -276,3 +279,38 @@ def test_message_that_raises_is_not_recorded_and_is_handled_again_on_redelivery(
     env.runtime.starting_statuses = ()
     env.dispatcher.handle_message(make_comment(delivery_id="d1"))
     assert env.processed_ids() == ["d1"]
+
+
+@pytest.mark.parametrize("event_type", ["pull_request_review", "pull_request_review_comment"])
+def test_feedback_on_fork_pr_is_skipped_and_logged(env, event_type):
+    env.dispatcher.handle_message(make_comment(event_type=event_type, is_fork=True))
+
+    assert env.runtime.calls == []
+    assert env.agent_lines() == []
+    [line] = env.debug_lines()
+    _timestamp, pr_key, pane_id, kind, _detail = line.split("\t")
+    assert (pr_key, pane_id, kind) == ("org/repo:feature/x", "-", "fork PR ignored")
+
+
+def test_pr_comment_on_fork_pr_is_resolved_through_github_then_skipped_and_logged(env):
+    env.github.forks.add(("org/repo", 1))
+
+    env.dispatcher.handle_message(make_comment(event_type="issue_comment", branch=None, file_path=None, line=None))
+
+    assert env.github.lookups == [("org/repo", 1, "tok-repo")]
+    assert env.runtime.calls == []
+    assert env.agent_lines() == []
+    [line] = env.debug_lines()
+    assert line.split("\t")[1:4] == ["org/repo:feature/x", "-", "fork PR ignored"]
+
+
+def test_review_without_fork_status_is_checked_through_github(env):
+    env.github.forks.add(("org/repo", 1))
+    msg = make_comment(event_type="pull_request_review", file_path=None, line=None)
+    del msg["is_fork"]  # sent by a webhook that predates fork detection
+
+    env.dispatcher.handle_message(msg)
+
+    assert env.github.lookups == [("org/repo", 1, "tok-repo")]
+    assert env.runtime.calls == []
+    assert env.debug_lines()[0].split("\t")[3] == "fork PR ignored"

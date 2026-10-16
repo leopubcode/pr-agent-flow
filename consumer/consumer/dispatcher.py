@@ -8,7 +8,7 @@ from typing import Any
 from . import prompts
 from .agent_file import AgentFile, AgentRecord
 from .agent_runtime import IDLE, AgentRuntime, AgentRuntimeError
-from .debug_log import MISSING_REPO_CONFIG, DebugLog
+from .debug_log import FORK_PR_IGNORED, MISSING_REPO_CONFIG, DebugLog
 from .github_client import GithubClient
 from .processed_ids import ProcessedIds
 from .repo_config import RepoConfig, RepoEntry
@@ -72,15 +72,22 @@ class Dispatcher:
         repo_full_name = msg["repo_full_name"]
         pr_number = msg["pr_number"]
         branch = msg.get("branch")
+        is_fork = msg.get("is_fork")
 
-        if not branch:
-            # PR Comments carry no branch; resolving it needs the repo's token.
+        if not branch or is_fork is None:
+            # PR Comments carry no branch or fork status; resolving them needs the repo's token.
             repo = self._require_repo_config(repo_full_name, f"{repo_full_name}#{pr_number}")
             if repo is None:
                 return
-            branch = self._github_for(repo.token).resolve_pull_request(repo_full_name, pr_number).branch
+            pr = self._github_for(repo.token).resolve_pull_request(repo_full_name, pr_number)
+            branch, is_fork = pr.branch, pr.is_fork
 
         pr_key = f"{repo_full_name}:{branch}"
+        if is_fork:
+            # sbx-start <branch> and pushing to origin can't reach a fork's branch.
+            self._debug_log.write(FORK_PR_IGNORED, pr_key, f"{repo_full_name}#{pr_number} comes from a fork; no Coordinator used")
+            return
+
         record = self._agent_file.get(pr_key)
         if record is None:
             repo = self._require_repo_config(repo_full_name, pr_key)
