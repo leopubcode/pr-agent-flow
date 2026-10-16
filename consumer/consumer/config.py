@@ -20,6 +20,7 @@ class Config:
     max_messages_per_poll: int
     session_ready_timeout_seconds: int
     delivery_retention_days: int
+    allowed_comment_authors: frozenset[str]
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -39,4 +40,10 @@ class Config:
             max_messages_per_poll=int(os.environ.get("MAX_MESSAGES_PER_POLL", "10")),
             session_ready_timeout_seconds=int(os.environ.get("SESSION_READY_TIMEOUT_SECONDS", "60")),
             delivery_retention_days=int(os.environ.get("DELIVERY_RETENTION_DAYS", "7")),
+            allowed_comment_authors=parse_logins(_required("ALLOWED_COMMENT_AUTHORS")),
         )
+
+
+def parse_logins(value: str) -> frozenset[str]:
+    """Comma-separated GitHub logins, lowercased (GitHub logins are case-insensitive)."""
+    return frozenset(login.strip().lower() for login in value.split(",") if login.strip())

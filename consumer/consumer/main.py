@@ -38,7 +38,9 @@ def run(config: Config) -> None:
         github=github,
         workspace=workspace,
         session_ready_timeout_seconds=config.session_ready_timeout_seconds,
+        allowed_comment_authors=config.allowed_comment_authors,
     )
+    logger.info("Accepting comments from: %s", ", ".join(sorted(config.allowed_comment_authors)))
 
     _reconcile_on_startup(state, tmux)
 

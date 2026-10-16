@@ -24,12 +24,16 @@ class Dispatcher:
         github: GithubClient,
         workspace: Workspace,
         session_ready_timeout_seconds: int,
+        allowed_comment_authors: frozenset[str],
     ):
+        if not allowed_comment_authors:
+            raise ValueError("allowed_comment_authors must not be empty")
         self._state = state
         self._tmux = tmux
         self._github = github
         self._workspace = workspace
         self._session_ready_timeout_seconds = session_ready_timeout_seconds
+        self._allowed_comment_authors = allowed_comment_authors
 
     def handle_message(self, msg: dict[str, Any]) -> None:
         delivery_id = msg["delivery_id"]
@@ -42,6 +46,13 @@ class Dispatcher:
             # the closed action (see webhook/handler.py normalize()) -- every
             # other tracked event type is a comment/review.
             self._teardown(msg)
+        elif (msg.get("actor") or "").lower() not in self._allowed_comment_authors:
+            # Covers both strangers on public repos and the agent's own machine
+            # user, whose comments would otherwise loop back into the queue.
+            logger.info(
+                "Ignoring %s on %s#%s from non-allowlisted author @%s",
+                msg["event_type"], msg["repo_full_name"], msg["pr_number"], msg.get("actor"),
+            )
         else:
             self._dispatch_comment(msg)
 

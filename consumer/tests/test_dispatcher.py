@@ -29,7 +29,10 @@ def dispatcher(state: StateStore, tmp_path: Path):
     workspace = MagicMock()
     workspace.ensure_branch_checkout.return_value = tmp_path / "worktree"
 
-    d = Dispatcher(state=state, tmux=tmux, github=github, workspace=workspace, session_ready_timeout_seconds=5)
+    d = Dispatcher(
+        state=state, tmux=tmux, github=github, workspace=workspace,
+        session_ready_timeout_seconds=5, allowed_comment_authors=frozenset({"octocat"}),
+    )
     return d, tmux, github, workspace
 
 
@@ -124,3 +127,37 @@ def test_sandbox_exit_during_startup_raises_with_output(dispatcher, state: State
     tmux.send_instruction.assert_not_called()
     assert state.get("feature/x").status == ERROR
     assert not state.is_duplicate("d1")
+
+
+def test_comment_from_non_allowlisted_author_is_ignored(dispatcher, state: StateStore):
+    d, tmux, github, workspace = dispatcher
+    d.handle_message({**make_comment(delivery_id="d1"), "actor": "leopubcode-agent"})
+
+    tmux.ensure_session.assert_not_called()
+    tmux.send_instruction.assert_not_called()
+    assert state.get("feature/x") is None
+    assert state.is_duplicate("d1")
+
+
+def test_allowlist_is_case_insensitive(dispatcher, state: StateStore):
+    d, tmux, github, workspace = dispatcher
+    d.handle_message({**make_comment(), "actor": "OctoCat"})
+    assert state.get("feature/x") is not None
+
+
+def test_pr_close_by_non_allowlisted_author_still_tears_down(dispatcher, state: StateStore):
+    d, tmux, github, workspace = dispatcher
+    d.handle_message(make_comment(delivery_id="d1"))
+    d.handle_message({
+        **make_comment(delivery_id="d2"), "event_type": "pull_request",
+        "is_merged": True, "actor": "someone-else",
+    })
+    assert state.get("feature/x").status == CLOSED
+
+
+def test_empty_allowlist_is_rejected(state: StateStore):
+    with pytest.raises(ValueError):
+        Dispatcher(
+            state=state, tmux=MagicMock(), github=MagicMock(), workspace=MagicMock(),
+            session_ready_timeout_seconds=5, allowed_comment_authors=frozenset(),
+        )

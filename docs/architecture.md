@@ -47,7 +47,11 @@ Only one live agent session per PR, keyed by branch name.
     branch -> session/workspace/sandbox state, and a dedup table keyed on GitHub's
     `X-GitHub-Delivery` id (protects against SQS/GitHub redelivery).
   - `dispatcher.py` ties it together: dedup, provision-or-reuse a session, send the
-    instruction, or tear down on PR close.
+    instruction, or tear down on PR close. Comments and reviews are only acted on when
+    their author is in `ALLOWED_COMMENT_AUTHORS` (required, case-insensitive). This keeps
+    strangers on public repos from directing the agent, and keeps the agent's own machine
+    user from looping its comments back in — so never add that user to the list. PR-close
+    events are exempt, so teardown happens whoever closes the PR.
   - `github_client.py` is read-only (resolving branch names, PR metadata) via a PAT —
     pushing commits happens from inside the sandbox using its own injected git
     credentials (see the sandbox's "Git Authentication" behavior), never this client.
@@ -88,7 +92,8 @@ revisit later with e.g. `git ls-remote` polling if needed.
    `consumer_access_key_id`/`consumer_secret_access_key` outputs (`terraform output -json`
    to see sensitive ones).
 4. Copy `.env.example` to `consumer/.env` and fill in `GITHUB_TOKEN` (a PAT), the AWS
-   creds + `SQS_QUEUE_URL` from step 2, and `WORKSPACE_ROOT`.
+   creds + `SQS_QUEUE_URL` from step 2, `WORKSPACE_ROOT`, and `ALLOWED_COMMENT_AUTHORS`
+   (comma-separated logins allowed to direct the agent).
 5. `pip install -e consumer/` then `pr-agent-consumer` (or `python -m consumer.main`) on
    the host that has `sbx`/docker sandboxes and `tmux` available.
 6. Comment on an open PR. Watch it land: `aws sqs receive-message --queue-url <url>` (it
