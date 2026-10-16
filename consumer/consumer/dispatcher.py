@@ -7,8 +7,8 @@ from typing import Any
 
 from . import prompts
 from .agent_file import AgentFile, AgentRecord
-from .agent_runtime import IDLE, AgentRuntime, AgentRuntimeError
-from .debug_log import MISSING_REPO_CONFIG, DebugLog
+from .agent_runtime import IDLE, AgentRuntime, AgentRuntimeError, PromptTimeout
+from .debug_log import MISSING_REPO_CONFIG, NEVER_BECAME_IDLE, PROMPT_TIMED_OUT, DebugLog
 from .github_client import GithubClient
 from .processed_ids import ProcessedIds
 from .repo_config import RepoConfig, RepoEntry
@@ -88,7 +88,15 @@ class Dispatcher:
                 return
             record = self._start_coordinator(pr_key, repo, pr_number, branch)
 
-        self._runtime.prompt(record.pane_id, prompts.feedback_prompt(msg))
+        self._prompt(pr_key, record.pane_id, prompts.feedback_prompt(msg))
+
+    def _prompt(self, pr_key: str, pane_id: str, text: str) -> None:
+        """Prompt a Coordinator; a timeout is logged and re-raised so the message is redelivered."""
+        try:
+            self._runtime.prompt(pane_id, text)
+        except PromptTimeout as exc:
+            self._debug_log.write(PROMPT_TIMED_OUT, pr_key, str(exc), pane_id=pane_id)
+            raise
 
     def _require_repo_config(self, repo_full_name: str, pr_key: str) -> RepoEntry | None:
         repo = self._repo_config.get(repo_full_name)
@@ -102,19 +110,21 @@ class Dispatcher:
     def _start_coordinator(self, pr_key: str, repo: RepoEntry, pr_number: int, branch: str) -> AgentRecord:
         started = self._runtime.start_coordinator(branch, repo.clone_path)
         self._runtime.set_secret(started.sandbox_name, repo.token)
-        self._wait_until_idle(started.pane_id)
+        self._wait_until_idle(pr_key, started.pane_id)
 
         record = AgentRecord(pr_key, started.pane_id, started.tab_label, started.sandbox_name)
         self._agent_file.put(record)
-        self._runtime.prompt(record.pane_id, prompts.startup_prompt(repo.repo_full_name, pr_number, branch))
+        self._prompt(pr_key, record.pane_id, prompts.startup_prompt(repo.repo_full_name, pr_number, branch))
         return record
 
-    def _wait_until_idle(self, pane_id: str) -> None:
+    def _wait_until_idle(self, pr_key: str, pane_id: str) -> None:
         deadline = time.monotonic() + self._ready_timeout_seconds
         while True:
             info = self._runtime.get_agent_info(pane_id)
             if info.exists and info.agent_status == IDLE:
                 return
             if time.monotonic() >= deadline:
-                raise CoordinatorNotReadyError(f"pane {pane_id} not idle after {self._ready_timeout_seconds}s")
+                detail = f"pane {pane_id} not idle after {self._ready_timeout_seconds}s (last status: {info.agent_status})"
+                self._debug_log.write(NEVER_BECAME_IDLE, pr_key, detail, pane_id=pane_id)
+                raise CoordinatorNotReadyError(detail)
             time.sleep(self._ready_poll_interval_seconds)
