@@ -26,10 +26,10 @@ GitHub PR Comment / Review / Review Comment / PR closed
                      v                                                                        v
   look up PR Key in the agent file                                             sbx stop <sandbox>,
   pane alive?  yes -> herdr agent prompt <pane> <Feedback>                     herdr tab close <tab_id>,
-               no  -> sbx-start <branch> from the repo's clone,                remove agent file line
+               no  -> sbx-start from the repo's clone,                         remove agent file line
                       sbx secret set github --sandbox <name>,
                       wait for `idle`, record in agent file,
-                      startup prompt, then the Feedback
+                      startup prompt (check out the branch), then the Feedback
 ```
 
 There is one **Coordinator** per pull request, identified by its **PR Key** `owner/repo:branch`,
@@ -70,12 +70,12 @@ so two repositories with the same branch name never share one.
     4. Resolve the branch and fork status (through the GitHub client for PR Comments).
     5. **Ignore pull requests from forks** (head repository differs from the base repository,
        or the fork was deleted) and write a `fork PR ignored` line to the debug log:
-       `sbx-start <branch>` and `git push origin` can't reach a fork's branch.
+       `git fetch origin` and `git push origin` can't reach a fork's branch.
     6. If the agent file has a line for the PR Key and herdr still has its pane, prompt that
        Coordinator with the Feedback, whatever its `agent_status`.
     7. Otherwise start a new Coordinator: if there was a line, log `pane missing` and
        `sandbox orphaned` (the old sandbox is left running). Look up the repo config, run
-       `sbx-start <branch>` from the repository's clone, set the sandbox's GitHub secret, poll
+       `sbx-start` from the repository's clone, set the sandbox's GitHub secret, poll
        `herdr agent get` until the agent is `idle` (`COORDINATOR_READY_TIMEOUT_SECONDS`), write the
        agent-file line, then send the startup prompt followed by the Feedback.
 
@@ -109,6 +109,10 @@ Code's job stops at "get the Feedback in front of the pull request's running Coo
 Everything else is instructed by prompt (`consumer/consumer/prompts.py`). The startup prompt
 names the pull request, repository and branch, and tells the Coordinator to:
 
+- first check out the branch itself, with `gh pr checkout <number> --force` (the GitHub CLI is
+  what the sandbox's credentials cover; `sbx-start` doesn't take a branch, so the sandbox
+  starts on whatever the clone has checked out); if that fails, act on no Feedback and reply that
+  the checkout failed;
 - hand each piece of Feedback to exactly one **Implementer**, one at a time;
 - commit and `git push origin HEAD:<branch>` after each Implementer (an explicit refspec, so the
   push target never depends on upstream config);
@@ -189,8 +193,8 @@ PR number is in the detail. The consumer's ordinary progress goes to `consumer.l
   missing pane). The JSON it reads (`sbx-start` output,
   `sbx list --json`, `herdr agent get`) is unverified until run by hand against the real tools.
 - Assumptions to check by hand: `herdr agent prompt` delivers to a busy agent; `sbx secret set
-  github --sandbox` takes effect for a running sandbox; `sbx-start <branch>` run from a clone
-  checks out that branch; herdr never reuses pane IDs.
+  github --sandbox` takes effect for a running sandbox; `gh pr checkout` in a sandbox started from a
+  clone checks out the pull request's branch; herdr never reuses pane IDs.
 - Orphaned sandboxes (pane gone, or a new Coordinator that never became idle or never got its
   secret) are only logged; stop them by hand.
 - A stuck Coordinator after a prompt timeout is not replaced or stopped.
@@ -204,11 +208,11 @@ PR number is in the detail. The consumer's ordinary progress goes to `consumer.l
 The consumer runs on the Operator's machine, which needs:
 
 - Docker sandboxes (`sbx`) and herdr, with herdr running and its `sbx` plugin installed.
-- The `sbx-start` shell alias, which starts a sandbox in branch mode in a new herdr pane and
+- The `sbx-start` shell alias, which starts a sandbox in clone mode in a new herdr pane and
   prints herdr's JSON result (`.result.context.focused_pane_id` and `.tab_label`). Because it's
   an alias, the consumer runs it through an interactive shell: by default
-  `$SHELL -ic 'sbx-start "$1"' sbx-start <branch>`. Set `SBX_START_COMMAND` if your alias lives
-  in a different shell's rc file (e.g. `zsh -ic 'sbx-start "$1"' sbx-start`).
+  `$SHELL -ic sbx-start`. Set `SBX_START_COMMAND` if your alias lives in a different shell's rc
+  file (e.g. `zsh -ic sbx-start`).
 - A local clone of each watched repository.
 
 ### Setup

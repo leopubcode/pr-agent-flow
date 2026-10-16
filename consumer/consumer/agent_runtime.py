@@ -38,8 +38,8 @@ class PromptTimeout(AgentRuntimeError):
 
 
 class AgentRuntime(Protocol):
-    def start_coordinator(self, branch: str, clone_dir: Path) -> StartedCoordinator:
-        """Run `sbx-start <branch>` from `clone_dir`."""
+    def start_coordinator(self, clone_dir: Path) -> StartedCoordinator:
+        """Run `sbx-start` from `clone_dir`; the Coordinator checks out the branch itself."""
 
     def set_secret(self, sandbox_name: str, token: str) -> None:
         """`sbx secret set github --sandbox <name> -t <token>`."""

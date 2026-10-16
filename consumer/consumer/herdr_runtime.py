@@ -26,11 +26,8 @@ logger = logging.getLogger(__name__)
 
 
 def default_sbx_start_command() -> list[str]:
-    """`sbx-start` is a shell alias, so run it through an interactive shell that loads it.
-
-    The branch is appended as `$1`, never interpolated into the script.
-    """
-    return [os.environ.get("SHELL", "/bin/zsh"), "-ic", 'sbx-start "$1"', "sbx-start"]
+    """`sbx-start` is a shell alias, so run it through an interactive shell that loads it."""
+    return [os.environ.get("SHELL", "/bin/zsh"), "-ic", "sbx-start"]
 
 
 class HerdrSbxRuntime:
@@ -44,8 +41,8 @@ class HerdrSbxRuntime:
         self._prompt_timeout_seconds = prompt_timeout_seconds
         self._command_timeout_seconds = command_timeout_seconds
 
-    def start_coordinator(self, branch: str, clone_dir: Path) -> StartedCoordinator:
-        out = self._run([*self._sbx_start_command, branch], cwd=clone_dir).stdout
+    def start_coordinator(self, clone_dir: Path) -> StartedCoordinator:
+        out = self._run(self._sbx_start_command, cwd=clone_dir).stdout
         context = _last_json_object(out).get("result", {}).get("context", {})
         pane_id = context.get("focused_pane_id")
         tab_label = context.get("tab_label")

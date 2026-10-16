@@ -49,6 +49,3 @@ _Avoid_: Orchestrator, session, pane, sandbox, container
 **Implementer**:
 A subagent the Coordinator starts to address exactly one piece of Feedback.
 _Avoid_: Subagent (in domain language), worker
-
-**Catch-up**:
-A Coordinator started by hand by the Operator that reads all existing Feedback on a pull request and starts an Implementer for each piece it judges unaddressed. Every other Coordinator only handles Feedback as it arrives.
