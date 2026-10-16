@@ -1,4 +1,4 @@
-.PHONY: infra-apply infra-destroy consumer-install consumer-run test
+.PHONY: infra-apply infra-destroy consumer-install consumer-run status test
 
 infra-apply:
 	cd infra && terraform init && terraform apply
@@ -11,6 +11,9 @@ consumer-install:
 
 consumer-run:
 	python -m consumer.main
+
+status:
+	python -m consumer.status_server
 
 test:
 	cd webhook && python -m pytest tests/
