@@ -5,6 +5,7 @@ from typing import Any
 
 from . import prompts, sandbox
 from .github_client import GithubClient
+from .processed_ids import ProcessedIds
 from .state_store import ACTIVE, CLOSED, ERROR, StateStore
 from .tmux_manager import TmuxManager
 from .workspace import Workspace
@@ -23,6 +24,7 @@ class Dispatcher:
         tmux: TmuxManager,
         github: GithubClient,
         workspace: Workspace,
+        processed_ids: ProcessedIds,
         session_ready_timeout_seconds: int,
         allowed_comment_authors: frozenset[str],
     ):
@@ -32,12 +34,13 @@ class Dispatcher:
         self._tmux = tmux
         self._github = github
         self._workspace = workspace
+        self._processed_ids = processed_ids
         self._session_ready_timeout_seconds = session_ready_timeout_seconds
         self._allowed_comment_authors = allowed_comment_authors
 
     def handle_message(self, msg: dict[str, Any]) -> None:
         delivery_id = msg["delivery_id"]
-        if self._state.is_duplicate(delivery_id):
+        if self._processed_ids.contains(delivery_id):
             logger.info("Skipping already-processed delivery %s", delivery_id)
             return
 
@@ -56,7 +59,7 @@ class Dispatcher:
         else:
             self._dispatch_comment(msg)
 
-        self._state.mark_processed(delivery_id)
+        self._processed_ids.record(delivery_id)
 
     def _teardown(self, msg: dict[str, Any]) -> None:
         repo_full_name = msg["repo_full_name"]
